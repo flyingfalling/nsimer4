@@ -1,0 +1,15 @@
+REV: OK, for NSIMer4
+
+Basically simple engine for simulating for SC experiments before full version.
+
+
+1) Encapsulate in class...
+2) Have list of (pointers?) to GPU side
+3) Use GPU for sorting and for random generation of circuit. Asynchronously write back to file to check it?
+4) Use for loops within neurons/items
+5) Use kernel within kernel for each group? I.e. to build total kernel of updates. Kernel call takes non-insignificant time.
+   Only issue would be if we wanted to use different "size" of kernel e.g. blocks etc.
+6) Allow sanity checking on CPU as well. I.e. use same STARTING VALUES/PARAMS/CIRCUIT.
+7) Neuron groups with specific functions?
+8) Derivations from "classes" (components). I.e. overload same conductance to be AMPA/GABAa/GABAb/etc.
+
