@@ -12,4 +12,951 @@ Basically simple engine for simulating for SC experiments before full version.
 6) Allow sanity checking on CPU as well. I.e. use same STARTING VALUES/PARAMS/CIRCUIT.
 7) Neuron groups with specific functions?
 8) Derivations from "classes" (components). I.e. overload same conductance to be AMPA/GABAa/GABAb/etc.
+9) Can't use function pointers in CUDA?
 
+
+
+Basically, everything is organized in
+
+GROUP
+
+
+Group has an "update" function, which may be composed of other components? I.e. built by user. *components* have the update function?
+
+Every "component" (?), has variables (always a fixed size vector?)
+For example, each neuron iterates through its own list by itself? If that's the case it will have different # updates per guy. So we need
+PRE/POST after all, and update function doesn't care "who" is the pre/post. It literally goes through all e.g. conductances, and
+does the adding...? ;)
+
+Even a signed integer is 2^31-1, so 2 billion.
+
+
+Craziest case, each synapse has a couple states, and neurons could have different # of presynaptic conductances. So, I literally have array like
+
+
+1  1  1  1  1  1  2  2  2  2
+32 33 34 35 36 37 38 39 40 41
+
+To show the index of the array for that guy.
+
+Easiest to literally keep a separate vector for each neuron (just keep the start pointer and end pointer?). And I just read between those. Ah, OK.
+So e.g. within the GABAb, I go through and I *know* that it's the start neuron.
+
+Anyway, more salient problem is:
+
+1) Spike vector
+2) Small timing (e.g. for local gap junction-like models)
+3) Axon time sending
+4) Sorting/random generation (for spiking purposes)
+5) Defining/connecting up "component" update functions in the correct order.
+
+Note: Can we do more than one kernel at a time? I'd really prefer to just have a single "kernel", that does an entire "chunk" of updates...or the whole
+thing. This makes it much easier because there is no kernel overhead. But, we can't change parameters of kernel call then. I think there is a max
+amount of instructions in a kernel too?
+
+So, basically I have a "main" update thing that updates all guys using other __device__ functions... OK, that's fine.
+But, of course, "thread", and "block" must be defined before anything happens :)
+So, we need to sort of "re-distribute" between each call depending on number of guys to be computed ;)
+
+Hm, within-threads, shared memory summation? But if same neuron goes across blocks...problem ;)
+
+So, same guys always need to be within a "block", so we can use synchthreads etc.
+Just adding single value with offset is fine...
+
+At any rate, using some kind of vector in original memory that we allocate is best? Can we allocate in CUDA memory after the fact?
+
+
+__device__ is already executed (in parallel?) on each thread? Oh crap, but so is global, ahha...
+
+
+
+Have user specify:
+Models.
+Connections.
+
+
+
+Parameters and state-variables are pre-allocated on device. Of course, to fill them, it may be (will be?) much faster to fill in parallel. However,
+initially just do it on host and transfer ;) For things like sorting, do it after if necessary.
+
+So, we have the
+
+
+__Global__ which has the:
+
+callupdatemodel1
+callupdatemodel2
+callupdatemodel3
+
+
+Problem is that this is called independently on each device. Of course, each one needs to happen independently since each one could be in any given
+THREADIDX, and any given BLOCKIDX. Heck there could be for loops within these.
+
+So, we must intelligently separate out the results of these.
+
+So, to make sure everything synchronizes beforehand, we need to either synch across all blocks?
+
+What is a "grid"?
+
+Launch kernel from inside kernels. Oh yea it's 3.7 anyway so whatever ;)
+
+Ignore all the crap with CUDA, make everything as separate as possible...
+
+Independent way of building models of arbitrary update functions?
+
+All models update in parallel? Some models have "dependencies"... e.g. on presynaptic spikes, etc.
+
+Note, how do I deal with "time"? I don't want to re-launch a kernel every T milliseconds.
+However, on-kernel, I can update multiple "T". Much nicer I think ;) OK. Forget all that. Need to make it so I can update on CPU ;)
+
+
+Initially of course, I can make each one have its own guy with its own size of each array, etc. E.g. presynaptics etc.
+And then, those can be deconstructed
+
+And, dependencies can be listed osmewhere?
+
+There are the "abstract" models which include only the update functions, i.e. only one copy per every "model".
+Then there are the group-specialized ones.
+
+Do I want a whole different update function for each different model/group? How many groups can we have haha. Way too many...if e.g. some have
+GABAa, some don't, etc.
+
+
+How about for axon spike traveling/dendritic representation? User would code on GPU for density computations of spatial blocks, and make those voxels
+larger/smaller.
+
+OK, forget all that.
+
+User makes "components".
+
+
+E.g.
+
+GABAb_conductance
+
+This is just the conductance that decays over time or something.
+Hm, things like "spike events" or whatever?
+
+
+What I want:
+
+
+AdEx neuron model. Includes:
+
+-Neural update function
+-spike checker (and then generator)
+-outgoing connections (for adding spikes)
+-incoming connections (specifically in this case, the conductances, but it could be direct input??).
+
+NMDA conductances rely on neuron Vm though ;) (is it gated, or is does it have a delay...etc.?) We could make it either way of course ;)
+One is "faster". Are all communications "buffered"? If that's the case, models are updated symmetrically in that case...
+
+
+
+Simulator will determine if we need "buffer" for time-sent data. If user has to organize, it's a pain.
+
+
+At any rate, each "component" specifies the information it needs. This introduces a "dependency". We prefer to not have dependencies. For example,
+if I depend on Vm (what time step Vm? it doesn't need to be UPDATED?). Could they happen in parallel? Does it happen after/before? Does it matter?
+
+Hm, basically same idea as "paramset", I specify order that they may be updated.
+However, for external "input", I need to specify where to get it from.
+And, in some cases it may be "variable" size, in others it may be "set" size. Variable size for e.g. number of conductance members etc... That may be
+at the neuron level, or at conductance level, etc..
+
+Variable size requires iterating over it? If it's variable, but SET per neuron, I can do a pre-post type thing, with threads computing regardless of
+neuron (however different threads mustn't try to WRITE to same neuron...)
+
+If it's the firing array, they need to be updated sequentially per post-synaptic neuron? Nah, I can sum them with some kind of thread-thing?
+Still, too much memory. Spikes are added to spike firing table...telling spiketime, etc. How do I "add" them from multiple sources, that is the problem.
+I don't want to have to look at all neurons to see "did they spike, yes or no". Ah, but that might be more efficient, because then my kernel can only
+update those spikes that did fire, and the block will be much smaller... especially since there is quite a bit of computation. So, if they spike, they
+have some "firedthisturn", type thing, and those are events. And then I go through and have something basically "sum" those (add all them to a dynamic
+list this turn), which tells the ones I should process. And then, I go through that list of each one, and have to go through the group and read if it
+fired etc., i.e. all the postsynaptic targets of that one, and independently check if it fired for each one? Nah, imagine each one has a postsynaptic
+list to add to, so I for loop through that. No, that's not efficient, might have different number of iters per thread... just update each "group", which
+knows its presynaptic neuron, and I check that, and if it happened, I update it. Problem is it checks that memory a lot... but each synapse is written.
+
+
+OK, so GROUPS, COMPONENTS, etC.
+
+OK, so we have like, we update each "group" by itself. Multiple groups may of course be of same "model"..? but different params.
+OK, so need to define "model", and then group etc. So hard for user to code for that.
+
+
+Conceptually:
+
+We can update
+1) state variables (single)
+2) state variables (multiple, e.g. different # per item). For example conductance of incoming synapses. Is this stored in this model, or do they
+   act as a single input to me? To my UPDATE FUNCTION.
+3) EVENT (are a type of state variable).
+
+Problem is that for each MODEL, it communicates with other MODELS.
+
+How do we communicate?
+They communicate by ACCESSING other model's variables.
+
+I may access another model's:
+1) state variables (single)
+2) state variables (multiple?)
+3) EVENT (?)
+
+
+
+Ah, question is, how are INPUTS referenced in my UPDATE FUNCTION. I never want to (am never allowed to) iterate inside my update function.
+In other words, all items must be "compressed" to (single) state variables beforehand.
+
+That's fine, does user specify how to do that? it must be "unwrapped" into a different iteration beforehand done by multiple threads.
+Note, we're limited in number of blocks per grid, so we want to set the number, and then modulate number we iterate through in for loop for that. OK.
+
+We need to minimize the number of "lookups" though, we only want to read it ("span" of this neuron) once at beginning...
+
+At any rate, user MUST separate into those pre/post chunks.
+
+Problem is "transducers". or whate did I call them, um, "correlation", janakute... "correspondence". I.e. what N in the target array corresponds to
+this guy in this array ;)
+
+This guy always only gets some (fixed) inputs. Let's leave it like that for NOW. Inputs are simply variables of mine that can (are) updated by other
+models. However, other models may update these single variables in multiple items. So, logically, *I* can update multiple ones. But, I am not an
+"item", i.e. each synapse is an "item". Basically, it will treat me (pre) synaptically as a single item, many will point to me. That is fine.
+However, for POST, it is the problem, because in SOME point, post must point to muliple "pre". It must iterate over an unknown number of connections.
+So, there are some cases where I will have an unknown vector of state variables, that I iterate through? I.e. they must be added at some point.
+So add the ability to "combine" unknown vectors of guys. How to do that in parallel? Just make sure that it is inefficient. Each one will iterate
+through its own list. That's fine, might waste some GPU power, but hopeully they all have "similar" number of guys... Remember, they are all updating
+exact same at same time, with just different "X" or some shit? I.e. in lockstep...? Well they update same thing most of the time, until they reach
+end of for loop, then they are basically spinning/doing nothing (right...?)
+
+Hahaha, so simple, so possibly inefficient? If we *know* the number of elements, we can try to fit multiple components into asingle blocks/threads.
+Take total number of elements, divide by number of items. That gives average elements per item. We now want to farm that number to each "block". Assume
+we have somehow sorted them by number of guys. Distribution will matter, but assume they are gaussian (ugh?) or uniform. if uniform, highest-lowest,
+etc. is best bet. So, e.g we might do top 3 and bottom 3, to make 6. They must go in even (?) groups? No, that's weird...need to select to get avg.
+I could binary search for an approriate guy, but too much work. Just for loop through it haha..make some threads wait, who cares ugh. Of course, parallel
+threads need to go that way. but then we need to organize the array so that jumps of THREADBLOCK, etc., will get the right guys... I.e. adjacent threads,
+should get adjacent memory. Fine. We can figure out how to organize those later (in GPU conversion heh). It only steps when it has more work to do.
+we might leave some memory "empty" if some guys end earlier. Each thread block (32?) gets that way. We can code that of parameter in GPU translation.
+Inter-leave them that way (stride=32). Only up to "largest" guy of that "block/grid?" of guys to run...
+
+Blocks are scheduled out to wait for memory transfer and such? How many blocks should we use? We want enough to fill #threads at LEAST of course, but
+how many do we want "lined up". Do we want to for-loop within blocks, or go multiple block chunks "deep" too? OK...
+
+
+OK, so there's two types of guys, the direct updates, and the "variable" updates. Variable updates require that they have a #items, startpoint, and stride.
+(stride is done only in GPU case). Normally they are contiguous.
+
+For single guys, they will always (?) be in lockstep I guess... so I don't need to worry about "offsetting" it.
+
+So how about "spike adding", This won't work because spike adding might go to multiple of same target. No, that's not true. Each group? Ah, each
+synapse "group" is a specific PRE and POST, so they will never overlap pre or post neuron between groups, but within group it might. OK. But,  within
+group we want to do some parallel. Of course marking neuron as fired and doing all updates there is "fastest", but doesn't allow parallelism. Better
+to have update of my spike "group", go through and find fired neurons, an each "thread" has its own buffer of fired neurons? No, each synapse is
+independent anyway...but I go through N and find postsyn list. So literally, each neuron has a postsyn SYNPSE list. So it iterates through those and
+adds spike to each one of those in that case. Problem is that, we need to compute ***** HIT TIME *****
+
+I.e. what time point to process the spike HIT!!!! on the other side. Of course we could iterate through all synapses (assume they have state), and find
+those that would hit now, but that is not efficient? Much better to add to a "hit time" array or some shit. But, multiple synapses might try to schedule
+a hit time simultaneously, in which case we have a problem... so just have a target for each one, and do a sum of it? No... Yea definitely best to have
+"synapse hit groups", which schedule hits for a SET of synapses (e.g. 100), and are iterated in for loop so that they can add synchronously. I like that.
+Of course if theres only 1 hit each, very inefficient... I can dynamically mess with the memory, but for now who cares ;) Anyway, assuming I have
+100 spikes per "thread", 32 threads per block (512??). Thread "warps" or whatever? Um, anyway. Within block we have shared memory? I forget what's
+happening haha. oh well, figure that out later. Anyway, 100 synapses per thread, 128 threads per block, and ??? blocks
+
+Another option is to allow reading/writing to same, but use some atomic lock type thing to do it. So, just lock each postsynaptic guy as I go...?
+Seems like a lot of locks...
+
+
+Even if we do that, the postsyn guys would need to be sorted by...postsyn? Problem! At some point there will be "overlap". Forcing user to lock atomic
+is complex? How does HE know? ahaha. However, I could iterate through each postsyn...but I'd have to "check" each guy to get the value. That's fine
+though...? I.e. I sum all my presyn conductances every turn, even if they are 0. This makes the most sense, because they could remain above 0 depending
+on model..e.g. if there is decay.? Interesting, so the problem only arises when there is "weight added" type things each time step. Wait, even if they
+add to same postsyn neuron, they will not add to same postsyn *presyn condunctance "added" variable*. So, fine.
+
+
+So what are each of those parts CALLED. They all must have the same set of "moving parts", so to speak. Some of them will iterate over something, fine.
+But the thing they iterate over will be SET.
+
+And for "adding", it will be adding PER spikelist? if I have to check each one for "fired", what is the point? It's the number I have to check. Since I
+only check presyn neurons fire "fired", I can add scheduled "hits"? I don't know "how many" there will be per guy per turn. That is problem #1. Some
+may have, some not. If there is i.e. only 1/10 of synapses hitting this turn, then what. At the extreme, every single synapse has its own "spikelist"
+(scheduler). This is good because I can add, but it means that very few will have blah. Most will not have any content in them, meaning that post-threads
+iterating through procesisng them will have trouble. Check if fired, NOPE, if fired, process. I want to iterate through until I find the one that
+DID fire. If I know all fired, I can do it much nicer. If they did fire, there is quite a bit of processing that happens. At any rate, doing the ADDING,
+going through neurons is much more efficient...but each hitlist needs to be PER GROUP, which is kind of a waste. I can add to all postsyn guys of me at the
+same time haha. I.e. a set list of my postsyn groups, each of which has the pointer to the end one. And I add the timing to each based on their waiting
+values. But some might be like "zero-delay" spikes, e.g. continuous signals? Nah... Like some "hit time" delay might always be the same value, and might
+be per-group? And might always be full. So there are scheduled events, and full (saturated) events. Different update methods, fine.
+
+Question for user though, will they always follow those rules? Yea, I gues... Even if saturated, if high delay, we need to "start" the simulation with
+artificially filled data per time slice or something. What if user wants to use a more "dynamic" integration, i.e. reduce time slice dynamically, like
+Newton something or something? Hm, user provides way to integrate the equation. That's fine? Problem is we have to supply the "input" at each time point,
+but how does the integrator know how to/when to sample new signals for the input variables? Are they assumed constant the whole time.
+
+Whatever, for now heh.
+
+So, for now, user can specify how to do integration ;) With his "integrator" functions.
+Of course some things like "spike module" might be different/difficult? Since it needs to be "returned" to... what if we want to e.g. re-evaluate
+membrane potential of the neuron for the partial time step. We need to reverse integrate basically...waste.
+
+Also, adding noise? We need to set "noise" values constantly, via some specified functions, add, draw, etc. What about "spatially correlated noise"
+
+OK, GO!
+
+
+So "model" defines the update. For a single guy.
+
+What about dynamic number of guys, for example adding synapses, etc.? Leave some room for growth or something. Meh.
+Or dynamic number of spikes...for something like uh, asynchronous release? Meh.
+
+Not just each SYNAPSE has a thing, but each SPIKE could have its own variables I want to keep. Spikes in the past can continue to infinity...
+So I could have infinite number of spikes to keep track of heh.
+
+At any rate, for now, forget all that.
+
+I have MODEL.
+
+Model:
+A collection of
+1) Local Single parameters (local)
+2) Local Single variables (local)
+3) External single parameters (i.e. params of another model)
+4) External single variables (variables of another model, e.g. my INPUT?)
+
+5) Local MULTI parameters (basically an array). I just know its length.
+6) External MULTI parameters (array). I just know its length.
+
+7) A "spike scheduler" will actually be a model. That just has the list of presyn neurons to look at. And the list of synapse groups, for each of
+those outgoing synapses of those neurons. In other words, I just have a list of synapses to watch, but those synapses will (hopefully) have a collection
+of presyn neurons. Problem is, then when I go to process those spikes at hit time, postsyns will be quite diverse. Could be many groups, etc. In other
+words, synapses could be from many (neuron) groups. No, if I only keep a single SYNAPSE group, by definition, it is only between PRE-POST group of neurons.
+So, I just hope its large enough. At any rate, each one will have its own way. But I can run multiple spike scheudlers at a time for many groups, but
+it will only add those. blah. KOMAKAI!
+
+Problems arise if we want to do "time buffering". I.e. self-connections. Like, between NGRP and NGRP, I have gap junctions or something. I just keep
+it from previous time point? What is the point of a "zero time" transfer buffer thing? I remember I thought about this before. For example, spike
+computation along axon? I don't remember how I specified the "zero length" guys...
+
+I...I'm so confused. Make each separate model have its own "update time", and those updates happen within? Up to a "synch" point? But other guys
+may have offset updates not evenly divisible haha...
+
+Meh, forget it all? So, everything updates at smallest available DT? in which case, we might have a problem haha.
+
+Are zero delay times for transferring e.g. GABAa/GABAb conductances? Or are they for "direct accesses"? Like, need previous values to do update?
+
+If I allow direct accesses, we must assume a same/separate delay for each? Fine...
+
+At any rate, they should be ordered well.
+At any rate, we'll do the stride thing for multiple accesses (if we iterate within?). No, if we iterate over many...yea. OK.
+
+So, MODEL, with some update function.
+
+Question is how to handle the EXTERNAL varaibles. Specifically, inputs and outputs. And, the ordering of updates. I can specify *which* value of it
+I need access to. If I need access to (t), then it is timestep NOW, so I must update. If I need access to (t-1). I must wait for it to update.
+I use these "dependencies" to determine the update order of "phrases" (integration phrases). If I "simultaneously" update the models, I must have
+access to previous time step for each piece. Which is yet another way of doing it. So, for example, if M1 wants t-1 of M2, and M2 wants t-1 of M1, we
+have a loop. So, we unravel it by making a T-1 copy of variable of interest for each side, using *that* as the input to each model, and then updating
+to the new one as "output". (if it is a state variable). So, we just have a pointer, and switch pointers I guess. E.g if were switching Vm. At any
+rate, problem in this case is there is an implicit "switch" to Vm(t) for "output" of  array, i.e. first time we would change it. I.e. volatility.
+
+So, problem is what if we want to access Vm(t) and Vm(t-1) in a single equation???! We name them prev and current. That's fine? I don't get it. Which
+do we update? At any rate, we analyse this (code? Shit?) to make a copy of the array... I.e. we need to build a dependency for the model updates. Hm
+are there other model spec. languages? LENS or something? Remember seeing something at the other place, but specific for spiking networks? Anyway,
+go for it... The python one...um,,,,
+
+
+A1: Vm1(t-1)  Vm2(t-1)  Vm3(t-1)
+A2: Vm1( t )  Vm2( t )  Vm3( t )
+
+
+
+So, we hide some "internal/temporary" variables that are only used for synchronization/update, from "real" variables.
+And we determine the need for other guys based on real ones? NO! User must specify V(t-1) and V(t), etc., as his own separate variables lol...
+Have some way to specify "through time" varaibles...
+
+And then, e.g. we only actually need another one if there is a dependency somewhere.
+
+Figure that shit out later...
+
+We want user to be able to specify update functions like:
+
+
+V = V + (gX + gX + exp(XXX) + ex * blah) / blah
+
+So, question is how we make temporary variables. For example, within each thread, do we want to do something? at X beforehand? It might have a forloop
+of its own in there...? If we update some other "model" (variable?) beforehand?
+
+That X might not represent this X...for all models.
+
+In other words, other guys might iterate over "chunks" of things which don't correspond to single neuron, i.e. it might iterate over two arrays,
+which tell what to do in the target? I.e. where to sve the target information in the thing that will
+
+
+Ah right things have "role" in model...heh.
+
+Two types of model, single models and "conn" models?
+
+Or, is everything a connection? ;)
+
+
+
+For example, to update a given neuron model:
+
+
+AdEx neuron, connected by dynamic synapse...AdEx neuron has AMPA and GABAa, for example...
+
+
+//Update each component...can be done in parallel...update funct is different though so ;)
+
+AMPA:
+
+Update all individual synapses and sum to target single value...? (literal sum?)
+In some crazy cases might be shunting blah, requires in Vm of neuron of course? No...no closing?
+Just directly have the "conductance" or amnt of transmitter etc.
+
+
+So, first we have a um, go through either spikes and add... but might go to same postsyn neuron, that is the problem.
+So, it't the possyn who checks its presyn "added" each time step? Per "synapse". This is kind of inefficient, but meh.
+
+So, first we go through for each synapse, and update it. No, they might go to same postsyn, so need to go per postsyn.
+
+
+//Get "added"?
+//Might want to do "offset" of time? Or, how can we make a "tmp" variable. This represents a "single" thread of course!
+
+
+//We know which of that are "owned" by neuron N
+for n in neuron#:
+ for x in (gampa_start[n], gampa_end[n]):
+  gAMPA +=  gAMPAinput[x];
+
+What if relies on e.g. time or Vm of N? It always refers to Vm of neuron (if there is ambiguity, it's a problem ;D)
+If it references a param of a group there must be a way to do that.
+
+For updating spikes?
+
+
+for s in spikeschedulers:
+  for n in (spikepren_start[n], spikepren_end[n]):
+    if(spiked)
+      add to list (check its group etc.)
+
+
+Problem is there is a lot of cases where most threads are not executing because the if() evaluates to false.
+Thus, only update neurons who "spiked", and add many to all spike guys. If there is e.g. all-to-all there is NO WAY to get it nicely organized.
+There will always be dependencies. So, I need to use atomics or something. Which would be faster I wonder? Fewer sorting is obviously better.
+Also, of course, organizing "data" to read in chunks is better (i.e. sorting so adjacent...) But we can add that stride for neurons....
+
+Same as having a single guy tallying them up or something singly. Is problem memory? How about check firing time and computing regardless...
+First, just check and add so that waiting is short. Then, do (large) computations after, with variable offsets? This ensures that any "expensive"
+computations are actually happening in parallel. OK...that sounds great, how to automatically do that? Have some kind of "conditional" thing that
+checks if there is a conditional computation, tabulates it, then does the expensive computations afterwards (based only on offsets).
+
+I like that idea. For spiking etc. Will save us FLOPs I think?. The skip will only be a "write" while we wait for next block. Problem is only subset will
+be hit by it, so there will be full flush on other guy. Although, we could compute multiple groups at the same time? I.e. start multiple kernels
+if they exist...? Hm. Forget this stuff for now, jsut get it to run then optimize ;9 OK.
+
+
+
+
+How to specify update functions, how to specify initialization/connection functions, etc. Define 3d by matrices etc. Whatever. Still need to define
+the update functions in some way.
+
+
+Just do the thing like here, where I define a "MODEL", or "Component". A model is made up of components? or model? We need to tell it the order to
+update it in though. Ah, but it shouldn't matter the order...oh shit, this is amazing. Within it, it will totally depend on dependencies. If we require
+T-1, that's fine. But if we just specify Vm, it doesn't matter? But of course, better to update them in clusters? E.g. input is updated at beginning?
+or at end? if we print at "beginning" or at "end" or what? E.g. if we define a "printer", that gets just the spiked guys...? Is comparing times better,
+or is just doing a boolean better? processing multiple with each one (writing same bytes there) is faster?
+
+If there is some dependency between them (for example conductances require input from "spikeing" of neurons, or etc.?), they must be updated first?
+But in that case spiking requires update of neuron, which requires update of conductances...? If we can't figure out any good way, we just do in
+random order...? For example...we need to update Vm, and gA requires Vm to know the pull or something? No, iGABA is e.g. current from gaba, which is
+condutance, times (Vm-Egaba) or smething. So, this depends on Vm, and on gGABA.
+
+If multiple guys refer to same variable (without caring about time offset), then we just go? If there is a problem, then user can manually specify it.
+For example, some require V(t-1), and then Vm updates...?
+
+There's no good way to do it except to specify ordering...
+
+E.g.
+
+gGABA_spikeadder (goes through individual synaptic "add values" and adds them (if they hit). Only if hittime is this time step of course.)
+gGABA_spikeadder requires (synapse_model?)
+gGABA requires gGABA_spikeadder (to have run)
+
+I.e. specify "updated variables" and "required" variables.
+If you want them before they are updated, specify.
+If you want them only after they are updated, specify.
+If you don't care, specify.
+If there is a 3-way interaction, there must be a way for user to manually specify ordering.
+
+What if multiple "components" update the same variable?
+OH, we can have nested models, e.g. it updates within here, but then blah. OK, great. I.e. we can have dependencies "within", but then they can not span.
+
+
+E.g.
+
+                 ~~~~~~~~C2~~~~~~~~~
+=======C1=======
+
+ a Req V1 b4
+ b Req V1 after (i.e. I update V1? locally?)
+
+
+Component must specify which "variable" it updates. And furthermore, each component must only update a single variable in a single timestep.
+So, we can't have multiple variables "updating" V1 in a single timestep? Or, could we? E.g. afterwards it adds V1 based on something?
+
+
+Ah other problem is to "add" to the update equation of V1 organically. For example, we don't know what the number of input conductances will be
+but they will be all handled in a certain way? Specifically summed and all that, and added to V1 integrator. I.e. there are like "holes" that
+can be "filled" by certain types. But those types must be "realized" before the update actually happens.
+
+For example, it takes a "full" conductance. Problem is if the update equation (integrator) is a more complex type, e.g. hybrid forward/backwards
+euler, that is the problem. user manually specifies it and thing can get mixed by the math...
+
+Hm, what if synapse requires Vm or something? Meh, 
+numer = sum( condi ) * sum( Ei*condi )/sum(condi)
+      = sum( Ei*condi )
+denom = 1 + (dt * (1/CM) * sum(condi))
+vm2 = (vm + dt * (1/CM) * (gL*dt*EXPON((vm-vt)/Dt) - wm + numer + inj)) / denom
+
+Bad example, as it doesn't rely on vm in the number/denom...?
+
+Then wm updates (based on vm?)
+
+As long as updates don't go across guys we're fine.
+Problem is if we try to do multiple "updates" within a single timestep?
+For example, to update Vm, we need all other accesses to me within that, to always access the same value I assume?
+Or they have to specify which one they get?
+
+fine, figur that shit out, but main thing is like the "holes" in Vm, where we add/etc. gA, gB, gc, etc.?
+I.e. user needs to know it can be added to that "hole".
+
+For example, total input current is added here. To convert this to a current, we add it here. All currents are summed/added etc.
+We can specify how many of the same type we want.
+
+Um, for example for computing gNMDA, we need to take tNMDA, and do like, distance from Vm.
+But, we need gNMDA to update Vm. We can specify, do we want "current" vm, previous, or do we not care.
+
+If same Vm wants multiple, we make fake guys to keepa round to use later. Simple as that.
+
+For example, spike check wants to check it anyway haha.
+
+Vm = Vm + (blah blah ) / Blah
+
+if(Vm (t+1) > what we want)
+
+we need to recompute. Problem is that e.g. NMDA might also be affected (quickly?). So, NMDA required Vm, so if we assume NMDA gating response is instant
+(?)..we will need to keep an old backup of NMDA too? Or only partway through computation does NMDA use it. but imagine something else., e.g. Wm used it?
+But why would we have updated it? We would just schedule it after the fact?
+
+Ah, this was the "zero delay" connections, which basically kept an "efference copy" of Vm for their use...
+
+
+Can those "external variables" be updated by me though?
+
+For example, NMDA doesn't care, or specifies Vm(t-1), we just update it beforehand...so much easier? but it needs to update partway through (fuck...)
+Do we want to allow partial update of guys? It requires "old" Vm, but then, after Vm updates partway, we go through the whole timestep again basically,
+having created a "new" V1? We don't know anything about connections though...any spikes that would have hit in this timestep, now hit partway? NO,
+noway, too confusing, because we'd have to update ALL partial things in any multiple of all spike times of all neurons. Which is impossible (e.g.
+for example, gap junction requires/wants V(t-1), do we update gap junctions too? Nah...don't allow that).
+
+OK, so, but the problem is if we have MULTIPLE guys who do that in overlapping ways? Or is that exactly what we disallow?
+What would be an example of that? These ones "reupdate". At the end of the turn, for example, they have both "pre" and "post". What about another guy
+that wants my "post". It must always get it after a "full" update. But after a full udpate, I may go back (based on some other guy updating?).
+
+I.e. "go-backs" (such as spike) will never "bubble" to requirements. They must *only* reference pre-update externals, or not care.
+
+For example, imagine we have multiple spiking segments? E.g. spiking axon "hillock", as well as dendrites, etc. Not the best simulator to do that,
+but whatever. In that case, they will be connected by (basically) gap junctions. Problem is if one updated by a spike previously, and other guy,
+if it ends up with a super-high current "after" the other guy "goes back" after spiking? We just have to be careful with such "raw" couplings...
+Couplings with Vm... They all basically need "before" and "after" update values.
+
+Of course if we connect NEURONS with these, that gets complex. Does it really? They all keep track of their "pre" update values beforehand....
+
+At what point do we "erase" those? Only AFTER ALL MODELS ARE UPDATED. (i.e. DT ends). Same with next V1...it is overwritten. First we overwrite it I guess?
+
+Fine, let's do it that way. That way we at least can do synchronous update IF WE WANT to. I.e. not all guys will have that, only those that have
+references to both PRE and POST by *ANY* model component. Or always specify pre/post. If all are pre or all are post, only keep a single value around.
+Otherwise (i.e. if some model specifies pre and another post), we need to keep it around. If we let a "either or" type guy, it doesn't care. E.g.
+for Wm update? Or for um...not spike checker, but like uh...what? If user doesn't care, that's fine...? E.g. spiking guys (after update), assumes it?
+We could do them end of last turn, or beginning of this turn. It all works out...
+
+
+
+At any rate, user specifies "model". We need to automatically compile the "source" update code to take into account T and T-1, etc., and possibly
+higher order integration methods if necessary. If we do partial (smaller) dt updates for certain models, there is a certain problem as if there is a
+"go-back" it may re-compute multiple timesteps of the smaller-dt model. But, we already forgot the previous values. So, there is no go-back in that
+case...no way to deal with that unless we want to keep around the last "N" time steps.
+
+Final (bigger) problem is that dt overlap might not exactly line up...which is an issue (?). Not really, all "arriving" guys have a timestamp? Wow...
+
+
+FINAL SIMULATOR IDEA:
+
+There are many MODEL, which has the update equations. Note a model does not necessarily represent a single "item", but is rather an "update" model,
+e.g. spike scheduler etc.
+
+
+How to handle "nested" components such as conductances
+
+
+
+User specifies many components. The way they update is based on inter-dependencies. I connect variables directly (reference components externally).
+It can take one or more conductances. as argument?
+
+How do I handle "multiple" guys? Ah, those are "range" guys, they are not ordered by N.
+
+So, we need to update single items. For example, there are single N, single components, single synapses.
+
+We would update those one-by-one, but we don't. We do define single items, but they might be handled "above".
+
+But, I need to have e.g. a spot for "pren" and "postn"? To make it easier to find...if I want to ;)
+Is it a pointer directly to neuron # in neuron grp? Must be an index...because otherwise how would I know "what" part of the neuron to point at?;)
+
+Or maybe I don't care at all, and just point to a "group"? Like, pre/post neuron might have many "components" in it, e.g. dendritic components.
+So we need "model" items, but what the heck everything is "connected" haha. How/where do I artificially "cut" models apart?
+
+Force user to "chunk" models.
+
+Models can be "nested", but they must not "overlap" (slice) across model updates.
+
+Furthermore, to access other models, you need to do it nicely
+
+
+How to iterate through guys? Of course easiest to specify for loop. Is that a "model" or an "updater".
+
+
+
+What do my models look like. The for loops are for "items" in the model, e.g. conductances etc.
+
+
+For individual models, we provide an update function for each one. They can be done in parallel but sometimes will be done in same for loop.
+Copying from V(t-1) to V(t) will not happen until all models are done updating (?). At least for same model? At end of loop we do all those
+copies, from V(t) to V(t-1). And then V(t) is no longer valid (is trash).
+
+Always specify if it should be old or new. If we specifically "set" new then blah? If we never specify, it is ALWAYS new (there is no old).
+
+
+
+To update a single component (of a single model), execute the script.
+
+For example, for AdEx neuron, it looks like: (updates Vm and Wm)?
+
+
+g(t) = sumi( gi(t) )
+E(t) = sumi( gi(t)*Ei(t) ) / g(t)
+Vm(t) = [ Vm(t-1) + dt*(f(Vm(t-1), Wm(t-1)) + g(t)*E(t)) + I ] / [ 1 + dt*g(t) ]
+Wm(t) = Wm(t-1) + dt*(Vm(t));
+spk(t) = if( Vm(t) > Vthresh ) //(conditional!)
+//So, I set "last spike time". OK....
+If a model has a conditional in it, it's better to update together (otherwise many threads will wait for it..?). But, problem is that
+"spike processor" will/may have uneven numbers to process...I could statistically estimate it, but that may leave some holding the bag heh
+For now just have the conditional thing processed here I guess...the spike is added either way.
+
+Yea, just do that for now.
+
+What other "ifs" are there. Adding spike to scheduler (ah thats if but fine...).
+
+Of course we do it for each spike GROUP.
+
+//Only want to do partial updates for those that got it! In other words, make a "list" of those?
+And make user specify that only those are updated. It basically stores the N of the spikers in a spiked array (or just sets a value), and then
+there is a later guy that goes through and tabulates them? And only those N are updated...? So either blocking write to it, or go through later
+and tabulate them... Same "Problem" as spike lists...how about we have each guy also go push back to the spike lists. In other words firing schedulers
+do the thing. But then, we already know which are firing rofl. No longer an update of neuron, now a synapse update. That's a problem. Just make an
+IF statement haha. Figure it out later.
+
+//Compute spike time.
+tspk = ( Vm(t) - Vm(t-1) ) / ( Vthresh - Vm(t-1) )
+
+Then, recompute.
+
+//REV: Use (t) and (t+1)...?
+
+g(t) = sumi( gi(t) )
+E(t) = sumi( gi(t)*Ei(t) ) / g(t)
+Vm(t) = [ Vm(t-1) + dt*(f(Vm(t-1), Wm(t-1)) + g(t)*E(t)) + I ] / [ 1 + dt*g(t) ]
+
+spk(t) = if( Vm(t) > Vthresh )
+{
+ partupd =  dt * ( Vpeak - V(t-1) ) / ( V(t) - V(t-1) )
+ secupd = dt - partupd
+ Wm(t) = Wm(t-1) + partupd*(F(Vpeak)) //Use W(t-1) here, i.e. update last Wm? Weird shit... What to do for cases where I update same variable 2x in same?
+ Vm(t) = Vreset;
+ Vm(t) = [ Vreset + secondupd*(f(Vreset, Wm(t)) + g(t)*E(t)) + I ] / [ 1 + secondupd*g(t) ] //if I use Vm(t), I need to use NEW Vm(t)... REV: I also want
+ //to keep track of "old" Vm...nice. I.e. "before" resetting it? So V(t-1) is reset to Vpeak for each one haha? Or can I just add in a "timepoint" for
+ //each, which is SIMTIME: Vm=Vpeak. I.e. save it as an "event" or something? Just save spike time haha... Doubles are erased? If same as "last time",
+ //it's not overwritten. Easier to just memcopy haha. Each "spiketime" guy keeps a pointer of where it is in its own spiketime array...but they are all
+ /growing, so no idea how "long" it will go? But, user specifies "length" of this simulation "chunk" on GPU, so just store "that much" time at once.
+ //But, if it runs e.g. 2 seconds, it is too long with dt=0.1, because that is 2000*10 = 20k, times N neurons, i.e. 10k, so 20k*10k is 20e3*10e3 = 2000e6?
+ //Which is, 2e9, 2 GB? * 8 bytes each...lol rekt. easier to just tabulate somewhere?
+ //What if we want to e.g. remember what Vm is? We can store in buffer and offload to CPU asynchronously...but even that is kind of a problem...hm.
+ // (( FLUSH WM?!?! ))
+ Wm(t) = Wm(t) + secupd*( F(Vm(t) ) )
+}
+else
+{
+Wm(t) = Wm(t-1) + dt*(F(Vm(t)));
+}
+ //Assume conductances stay the same (what?). Shit... if we're "re-computing", conductances may have had some issues...ugh?
+ //Compute Wm using V(t-1), or Vpeak?
+ //Then, compute Vm from restart to dt-tspk. Compute Wm over same period using post-computationg Vm.
+ //Note, conductances were decayed originally (uh, right?). Conductances were treated as being same through whole time step. I.e. they decay during...
+ //but whatever. So, just leave them. They are not decayed...but V-E is re-computed of course.
+ //Unless there is a "response" there, it is fine.
+}
+
+Final Vm(t) is now set. Also, lastspktime is set. Also...? OK.
+
+
+Anyway, we could "allow" temporary variables? How much memory does it have haha. If it is local, it will make a copy in each thread? It will allocate
+on the stack I guess...? Try it out haha...
+
+
+Then, so that is the spiking guy. It generates (in the end), updates to Wm, Vm, and last_spike_t (state variables). Also Wm and Vm t-1?
+Finally, we need to do update of e.g. gAMPA, gGABA, etc.. These also are "updated" simply by decaying them or whatever. That is fine.
+
+However, I also need to "add" each new spike, and each of those requires knowledge of the tau etc... So, each postsyn neuron does that? Or I have some
+number of guys who I have access to, and if it is a "spike hit", it adds that "hitweight" (STP and STDP modulated).
+And, I then multiply that by the decay value. Iterating through all my presynaptic guys. Wait...each neuron has to do this anyway (?) But some might have
+many, and some few. But all have to target a single memory value to write as the "current" tau value for adding purposes. Better to compute them all in
+parallel...and then that is the "real" hit weight (i.e. how much they've decayed by this time point). Or how much they've risen? Crap.
+Great, so each guy is "adding" that to the total value. But, what's the difference? The difference is it saves me N individual updates, since all
+of them are decayed equally at the end of each time step...(previous value, that is). We only "add" if it is non-zero (i.e. if it hit this turn).
+We only need to "update" each synapse that way...so much easier. That way we have them all separate...
+
+Ugh, each neuron will have different "size" of guy incoming synapse conductances...hm.
+Whatever, for now, we just need to um, iterate through the guys and add them. I.e. as "neuron" side. All SPIKE_SCHEDULERS, go through and update
+the "hitweights", and furthermore the "decayed hitweight" (based on any postsynaptic dynamics, if possible. If it's reliant on V(t) we are screwed). 
+At each neuron time, each neuron iterates through its own guy, and is roughly allocated based on # of presyn guys so they are balanced?
+Can we have separate thread computing for multiple guys? Reduction each time...e.g. each "reducer" has a memory location for each postsynaptic neuron
+it is responsible for, and it accumulates into that memory location... And each neuron has, not presynaptic synapses, but rather presynaptic REDUCED
+values. Might be arbitrarily added? What other functions would user do on them? In the end, might have e.g. 2 or 3 of them for guneuronss with "many"
+presynaptics, or 1 if a neuron has only a few presynaptics... So it would be iterating through the 3, vs the 1. However if some guys have only 1, we
+save a lot of time, because some thread is handling that "extra one" for free kind of...
+
+//How to keep track of this? Look for "for loops" that iterate from start-finish, and I can automatically unroll those...into another "model"
+For now keep it within the model. OK, right now its writing to a single location. Fine.
+
+
+
+OK, how can we do this to handle spiking activity? We have "spike schedulers" that are looking for fired guys. That's fine. Me, as a spike scheduler,
+handles ALL spikes (in this group!) for a given presynaptic neuron. This makes it easy..., because I only check each NEURON for spike, not each SYNAPSE
+for whether its presynaptic neuron spiked. Then, I only add the scheduled spikes to THIS spike scheduler (in a row). Then, when I process hit spikes, each
+spike scheduler (again) only processes "hit" spikes (wait, I can do those in parallel actually...? Each *hit* spike will be any spike in the scheduler
+that is in the "current" timestep. Fine. And it has the delta. Fine.). But there will be only some number (of the max)., e.g. 3 spikes in this scheduler,
+5 in the other one, 10 in the other one, 1 or 0 in another. I want to parallelize that... Just start a number of threads equal to maximum number of
+hitting spikes this turn, and it only processes hit ones? All possible synapses could hit this turn. Wow. So, that is too many. So, each thread iterates
+*between* spike schedulers. No, not good because "first" guy it looks at might not be a "work".
+
+
+Problem is I need to be able to tell it to only iterate through "good" loops that hit.
+Each one gives start/end, and bubbles up...
+
+Use shared memory or some crap to get all that haha.
+
+For now just make each "scheduler" run in parallel. Hope that there is at least (at most?) one spike in each. Note that "spikes" will be "pushed" to
+beginning of each hit array! I.e. we only process up to that array's size! If a thread hits the end of his, then he will go and take over some other guys
+thing? Would need to communicate that? Might not be synchronized though. Ugh.
+
+Anyway, do it that way, easiest... a single presynaptic spike will have a lot of guys it generates though. If some guys are spiking then yay. Try to like
+randomize the neurons...
+
+Who needs sorting? ;9
+
+
+
+OK, so to specify the spike scheduler type, I need to just have it iterate over some "guys" that it has control over. A presyn group or groups or
+some shit. Need to be able to access that specific group too though?
+
+Scheduler is specific PRESYN neuron group, specific SYNAPSE group, that way it only has to point to single variables for each.
+
+
+//How to set it up. Give it SYN group. This has a PRESYN neuron group (what the fuck is a group lol) SYnapses might have multiple "parts" Oh well.
+
+spike_scheduler ( syngroup )
+
+//from syngroup, we know presyn neuron group. Presyn neuron group has a SIZE (each has a # of synapses in SYNGROUP).
+//For #syngroups, I am assigned a specific portion of PRESYN NEURON GROUP to handle. E.g. if I have 128 spike scheduler threads, but a K80 has 2496 per
+//each GK210 (ah, but actuall should be 2880?). So, 90, versus 78. So, -12, so, 6 each, so, 90/6 is 15. Using 13 instead of 15. OK... At any rate I want
+//to fill up each of the 13...
+
+//So, what if I have 2496 spike schedulers...shit? That means, if there are (only?) 3k neurons of a type, I will (only) be checking 1 neuron per guy...
+//That's not very efficient...
+
+//I guess I could do "per synapse" type guy, which will separate out work. I like that way better. AHHHHHH YESSSSS
+//E.g. if 3MM synapses, fine. Still 30 synapses each? Note, same neuron guy will be spread across many...
+
+//Problem is, with an "if" statement, we will not always be processing a neuron in parallel that has spiked... we only want to process "hit" guys...
+
+//Best is to assign each scheduler a "chunk" of the "spiked" neurons (synapses?). Same instruction, just with different offset, on all processors...wait
+//no, that's only in each WARP (!!!!). Not the whole processor/whole chip I assume. So hopefully if it's a no-go, it will quickly move to the next guy.
+//In few cases will only 1 thread in a warp have work, and the rest not. Great, so spike scheduler is by-spike. It checks presyn of each guy, and then,
+//it adds or not. Fine. And then, when we process them, it only processes those guys, fine. We could make "chunks" separate along pre-syn or post-syn
+//bounds, in which case, we could (easily?) write to postsyn. Don't worry for now though, just do iterate through random...
+
+
+At any rate, scheduling is different.
+
+So, for update of spike scheduler, we have a guy with a chunk of synapses of a grp.
+And we process scheduling, and then we process hits. Fine.
+
+Then, when we process hits, we actually process spike updates I assume (at that time).
+We go through "our chunk" of Nstart to Nend of my scheduler. And if N hits, we update N.
+We update N based on presyn and postsyn number. We use grp# or do we just have a ptr to the group?
+ALl threads go through same guy, All postsyn/presyn groups will be the same I assume. That way all update equations are the same.
+
+Fine. Need a way to figure out "block". Like, "offsets" or "correspondences". When I refer to "presyn did spike or not" I need to know for me,
+*which* guy is presyn. If we load memory..just have it available? Better to for loop through or do it in parallel? Access my guy anyway...
+I.e. for all guys that "correspond", I need to know "which" N is presyn, and which "N is postsyn..."
+
+I could limit # synapses per guy or something...? Will it load "ints"?
+
+Note uint32 can hold 4.2 BILLION. So we should use that for offsets I guess, and error if larger...
+
+For doubles, they are doubles.
+
+For #timesteps, I guess long? What is 4.2 billion in timesteps? If 0.1 ms, that is 420 Million ms, or 420,000 seconds...which is a big number haha...
+If we use e.g. microseconds, that's 1 hour of simulation time. If we use milli, it's 1100 hours. Which is what, 50 days. If we use a long, it goes forever.
+Um, or, at least, 584000 *years*. Problem is, that becomes costly to move around? Is integer math more efficient? is the question... we save ourselves
+a lot of issues with double inprecision... Is uint32 + float32 more/less efficient than float64? is float32 in between -dt and +dt more/less accurate?
+
+Forget it, figure it out later.
+
+
+At any rate, all guys have a "start" and "end". Accessing a long into two values (start and end) is better, but meh.
+
+So, any time that there is "not equal number", we have to use a "correspondence", which tells (for one side, the smaller side?), where my
+"start" and "end" is, and for the other side (the larger side) for each guy, what is my guy. Of course I could do more search in there to find it,
+but pain in the ass. Of course in some case it could be an "uneven" correspondence, in which there are one of me pointing to multiple of those, and
+one of those pointing to multiple of me????!!! Is that possible? How would I handle that? I would make another "group" in between them, fuck. That
+requires a "connection". group. All guys must either have a "smaller" and "larger" one... Or they must be evenly sized.
+If it is (almost) all-to-all what happens?
+
+I could make something where it tells where my "numbering" starts (in the conn array), and then another that is the actual (individual) conns.
+That way it can be 2-way, but the problem with that is that it's ugly? We can figure it out later though...? I don't think I have this issue anyway.
+
+So, for example, there are "synapse array", that tells for each synapse, what is my pre and what is my post. Those are um, global.
+
+
+Problem is, how to specify it. Always allow "for all my guys over there" type thing. For each thing that is connected/related in some way, there is
+such a thing.
+
+
+How to compute all presynaptic neurons of a neuron, we can do it blah OK.
+
+
+Problem is e.g. for axons, I want to update them many times in a time step...up through dt. But, can I without doing other things? At some point they
+may hit a neuron, and cause some problem. They might also branch. I could update each axon independently...? Spike only travels at some "speed"...
+Huh, I could model it. If I set e.g. dt to be very very small...as small as the smallest axon cond delay, that's fine? Then I e.g. have what? I already
+have some minimum dt which is set to um, the smallest cond delay of a synapse. Of course I could "track" axons/dendrites...hm. Multi compartment heh.
+Easiest/easier to just um, do blah? problem is e.g. if the conductance is VERY fast, it reaches many times. Like, our grid, might miss if it is too large,
+like time constant of membrane might be small compared to dt, in which case hit at dendrite compartment 2 away would not "affect" me until t+2*dt or
+something...assuming synchronous update. Meh.
+
+I can "draw" curving axons and stuff...using splines.
+
+At any rate, dt of axons will be VERY small...do I update those at some faster speed? And count it as a "spike" hit? It is a group basically, do I need
+to handle all groups to all groups? Anyway fuck it figure it out later.
+
+
+For now, just do it.
+
+
+All "same group" guys, are implicit "for". Problem is that there is no "natural" way to combine elements (sum? Mult? etc.).
+User has to specify the "for" loop what to do. Fine.
+
+It always refers to "my" start/end of the guy. Great. Or the single correspondence if it's single ;) So, I have to know if I'm on the "short" or "long"
+side of that "connection". If short, it goes through from start to end (and gets number at each). If long, it just grabs the single guy.
+
+Need to know whether it's a "random" correspondence, or ordered. E.g. if "random" it is a start/end, IN a correspondence array. If not, it is literally,
+indices from start/end. Just always do "random" for now...waste of stuff sometimes, but meh.
+
+Huh, no need to sort? SOrt synapses by pre or post or some shit?
+
+Just *GO*
+
+
+
+User writes raw things like
+
+Vm = F(Vm, gampa, blah)
+
+gampa = F( gampai ) (gampai is an external variable of a grp of non-equal size). Thus, I must know my correspondence either with the grp, or with the
+gampai array itself! Let's do GRP. Always provide the larger ones, then I go through and make it for each of the smaller ones...
+
+
+So, user only specifies MODELS. Which variables they update each time step? Not all MODELS are updated every time step. For example, scheduler does the
+update of a different MODEL based on whether they spiked/hit or not. Also, no need to check that every thing is updated each turn, as some are not updated
+every turn.
+
+
+User literally just writes update function. I don't need to specify my for loop guys, it automatically handles it for me.
+
+
+Need nice way to "build" networks too though.
+
+
+What about "group" variables? have a "getvar" type function? All of these are "getvar" type functions. They redirect depending on the group, to a
+single value or not. Does it recompile an entirely different update function based on that? I guess hehehe.
+
+
+
+What will my thing look like:
+The Icurr(X,t) and g(X,t), indicate that there will be multiple (POSSIBLY MODELS!!!!?!?!) added. Could be multiple individuals too? We don't care (for now?)
+Could it be multiple individuals of multiple models? Could be!
+
+I don't want to have to redefine AdEx Neuron every time I add a current or conductance...
+I could specify g(X, Y, t), showing MULTIPLE instances of MULTIPLE models ;)
+Anyway, when user defines F, it goes BAM.
+
+
+MODEL( AdExNeuron )
+
+update (every t):
+Vm(t+1) = F( Vm(t), Wm(t), g(X, t), Icurr(X, t) )
+Wm(t+1) = F( Vm(t+1), Wm(t) )
+spkt = F( Vm(t+1) )
+
+
+
+MODEL( Synapse )
+
+update (select t):
+r(t+1) = F( r(t) )
+u(t+1) = F( u(t) )
+spkt = ??? Last hit time.
+
+//Only updated externally? I only update if my spike time is recent? Way inefficient...
+//Each synapse, I can define the update equation, but it's called from elsewhere heh.
+
+
+MODEL( SpikeSched ) //A spike is a spike SCHEDULER?
+
+update (every t?):
+//*THIS* is complex ;)
+state(t+1) = state(t)
+//For spike SCHEDULING:
+//Depends on "my" set of synapses of synapse GRP (but only a single group to make it easier...)
+//Writes to MY synapse *model*
+//Needs to know presyn neuron # of that synapse
+//Needs to know spiketime of that neuron
+//Needs to know current time
+//Needs to know syn delay of synapse, etc.
+//needs to know spike offset of that neuron (compute from spiketime)
+
+//For spike HITS:
+//Need to know my state
+//need to know POSTSYN neuron of head array of hitters.
+//Need to know CONDUCTANCE type of them (i.e. parameters of either synapses, as a group, or of postsynaptic conductance...?)
+//Double variables...? Weird. Yea, in this case, it's a property of the um, gating of the guys, binding etc., so it's a property of the um,
+//the receptors. Is that per-synapse or what? Well, easiest to have it be per synapse group... and then conductances are somehow per synapse group lol.
+//Or it could be per synapse or whatever. But, whatever. What's one variable. But, there could be multiple synapse groups contributing to gGABA
+//or something. Huh, so multiple types, multiple groups of those type, and multiple guys within each grouop, of those multiple types.
+
+
+
+
+
+
+//store spike time as last spiket already in the synapse, even though it is in future. And then, just schedule the synapse ID.
