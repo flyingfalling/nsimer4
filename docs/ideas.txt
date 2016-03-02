@@ -960,3 +960,145 @@ state(t+1) = state(t)
 
 
 //store spike time as last spiket already in the synapse, even though it is in future. And then, just schedule the synapse ID.
+
+
+So the model is the general idea, the IMPL actually makes a group. Fine.
+
+Models interface with models. Model interfaces are either "direct", e.g. 1-to-1 or "indirect", i.e. requires a "correspondence".
+Connections have a "delay". What is a connection? Who cares.
+
+
+What about "pre group" and "post group" type things.
+
+Anyway, I can make a "model". A model has some number of "guys". E.g. it can be composed of, e.g.:
+
+Vm updater
+gAMPA
+gGABAa
+gGABAb
+Iinj
+Ibg
+
+etc.
+
+Some parts of it are "parts" of model, e.g. gCOND and Ix, are many "submodels" that are parts of model.
+Models are allowed to have such things, but must specify how to use them all. Note those do (don't?) have their own update functions?
+E.g. decaying. Ah, so they do. Fine.. They could. I go through and do that as part of update of this "model" though. Since offset will be same?
+All members will go through same thing for that...i.e. no # of diff members? AH SHIT THEY ARE THE SAME THING!?!?!?!
+
+Finally, each of those gCOND also have multiple individuals, that maybe i need to go through. In which case I need to know the "number" in each "group"
+for it. So, for a single "model", that's fine, it is just the same, but I need to know a "grp pointer" type thing.
+
+Communicate between models (groups?) with group pointers.
+
+All things are updated. Variables have time markers. Dependencies. How to define "update". Do all models need to update? Do all groups need to update?
+We define "how" to update, within the group of course. Within group knows where its guys are. Between groups, we know start point and offset. They must
+have same number. Oh, but they might be scrambled or some shit. Fuck that.
+
+Every "group" has only one "update" function...? Which may or may not be always called. It is called by something, either by main guy, or a scheduler.
+Must be called by SOMETHING (?) in the simulator? Or error? Meh. Like, I say, "OK, *now* update with whatever data is written to your input variables"
+And then he does his thing. Great.
+
+
+So, models have pointers to models. And then when I make a group, it has a pointer to groups (of the other models). Does everything need to collapse
+into a single one? Do I have some "iterator" model type thing? No, as long as user does something to it? Like, gAMPA guys will be "updated" by me.
+Do I literally call "update"? haha. Which might have unknown vars passed to it, or none? I don't want to have to specify "when" to update, should be
+automatically scheduled. gAMPA etc. doesn't need to specify when to update, simply that it should be. Note something adds to it directly (shit) as
+input? No, it goes and "searches" it out, right. Does anything EVER get "written" to by another guy? Err, kind of. E.g. gAMPAi does, by synapse hitting.
+Also, input might. Also, user might "force" neuron to spike "now" by setting super-high input current. Or artifically spike it in some way. Just a spike
+timing generator.
+
+
+Any way/need to set a queue of spikes? Meh forget it.
+
+Models first have a structure. A model defines the way it does things. It iterates through regardless of how many there are. That's great.
+
+Then, e.g. gX guys do their thing. There is only a single one. I only "connect" it up in some specific way. That is a model IMPLEMENTATION.
+A model instantiation?
+
+And then, I can have instances of those, with specific #s of guys, specific parameters? In other words, GROUP.
+
+The "spike scheduling" is a detail. User should not need to code it. It is a thing given to user for free. For telling WHEN to update a given model.
+Problem is it requires user to tell WHEN and WHAT to add, and that determines WHEN and WHAT to call. Great ;)
+
+One other "connection" model I can give to user is DIRECT, which is not spiking based. It has a 1-to-1 for each item. Don't worry about this yet though.
+
+I don't need to sort. However, I do need to draw MANY random numbers to e.g. determine neuron numbers, connectivity, and location.
+I can do a ghetto thing where I simply generate "synapses" independently (?) with pre/post, and then hook them up later. However, I need to generate
+arrays of correct size with MALLOC in CUDA, so at some point something has to generate that? I can do the drawing of parameters in parallel, however
+network construction with cumulsum etc. must be in serial in a sense? Unless I want to go "over". Another way is to randomly "remove" the last N guys
+haha...
+
+Whatever, first worry about "running". Then, figure out "construction". ON GPU.
+
+All "things" are variables. Some are updated. Some are not. Some are external (of other models). How do I know? I specify. For each variable, what is it.
+What updates it? State variables are all updated. If i don't know that, can I figure out the dependencies?
+
+
+Model variables must specify their "dependencies". But they can be inferred inline in the update function, by how they are iterated through.
+Second level iteration can be factored out, if it is only (always) 1 size.
+
+How do I handle things like NMDA?
+They are all updated.
+
+//hitweight(t) = A(t) * r(t) * u(t) //For example, for STP synapse?
+
+MODEL( )
+
+MODEL( STPsyn ) (only updates at hit time???? I.e. something ELSE calls.)
+
+passedtime = tspk(t) - tspk(t-1) //need it negative, so just reverse?
+u(t) = F( u(t-1), r(t-1), passedtime ) //and other params etc.
+r(t) = F( u(t-1), r(t-1), passedtime )
+hitweight(t) = A(t) * u(t) * r(t) //Note A(t) is constant unless its STDP,
+in which case it can change or something ;)
+
+
+//These are only set on spike hit.
+MODEL( gHit ) (only updates at hit time????)
+
+g(t) = hitweight(t)
+g(t) *= exp( -delta / mytau ) //mytau is from postsyn group or smthing. Might be per synapse. Who knows, find it.
+
+
+
+MODEL( gX )
+
+g(t) = g(t-1)
+g(t) *= exp( -dt / mytau )
+for(i) in gItems (hit weights):
+  ?? if( tspk >= tnow?? ) //Need to check it? No guarantee theyre reset to zero...doing the check here is a pain though...
+  g(t) += gi(t)
+
+
+MODEL( CondAdEx )
+
+g(t) = 0;
+E(t) = 0;
+for(i) in gModels:
+  g(t) += gi(t)
+  E(t) += gi(t)*Ei //It's a param anyway...
+E(t) /= g(t) //only if g(t) > 0 for stability haha...
+
+I(t) = 0
+for(i) in iModels:
+  I(t) += Ii(t)
+
+V(t) = ( V(t-1) + dt*( F(V(t-1), W(t-1)) + g(t)*E(t) + I(t) ) ) / ( 1.0 + dt*g(t) )
+
+secondperiod=dt
+if( V(t) > Vthresh )
+{
+  firstperiod = dt*( Vthresh - V(t-1) ) / ( V(t) - V(t-1) )
+  secondperiod = 1 - firstperiod
+  tspk = tnow + firstperiod
+  W(t) = W(t-1) + firstperiod*( F(Vthresh) )
+  V(t) = ( Vreset + secondperiod*(F(Vreset, W(t)) + g(t)*E(t) + I(t) ) / (1+secondperiod*g(t)) //REV: In this case it literally sets variable, not derivative...
+  //W(t) = W(t) + secondperiod * ( F( V(t) ) )
+}
+
+W(t) = W(t-1) + secondperiod*( F( V(t) ) ) 
+
+
+
+//Check all guyes, is tspk >= tnow? If so spike and shit ;)
