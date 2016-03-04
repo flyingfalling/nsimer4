@@ -92,6 +92,9 @@ void make_adex()
   gAMPA.add_intern_var( "tau2" );
   gNMDA.add_intern_var( "GluAffinity" );
 
+  gAMPA.add_hole( "gSyn" );
+  //gAMPA.add_model( "gSyn",  spksyn ); //May get from multiple GRPS (models?) of synapse, implementations at least. And furthermore, from many INDIVIDUALS
+  
   //REV: FUCK?!! What if I have both um, gNMDA to add, and gNMDA to add?
   //in which case there is like gHit for each and every POSTSYN TYPE.
   //Which I need to update...
@@ -108,28 +111,21 @@ void make_adex()
   
   
   
-  gAMPA.add_hole( "gSyn" );
-  gAMPA.add_model( "gSyn",  spksyn ); //May get from multiple GRPS (models?) of synapse, implementations at least. And furthermore, from many INDIVIDUALS
-  //within there. Do we care difference between individuals and models? I guess...we need to make sure for my "N" of this "group" I am updating, that
-  //I am (always?) grabbing the correct "X" from the target. Thus, every time we do model->g or whatever, we don't just directly access it, but we're
-  //iterating not only through models, but also through individuals. Every model-model interface *ALWAYS* has a correspondence, of which (group of?)
-  //Ns correspond to me. I can of course remove the loop if it is just 1, or if it is equivalent, etc.
-  //OK, so how to "actually" make. If there is a single group, it always "adds" guys, etc.
-
   
   EVENT_MODEL spksyn;
   //For each guy, need to have a hit_gAMPA , and hit_gNMDA etc.!!!!
   spksyn.add_intern_var( "hitweight" );
   spksyn.add_intern_var( "weight" );
   spksyn.add_intern_var( "t_hit" ); //this is time of hit? Or time of spike?
+  spksyn.add_intern_var( "delay" ); //this is time of hit? Or time of spike?
   
   spksyn.add_intern_var( "transmitter_type" ); //GABA or Glutamate, etc.? Do I need to know this? Choose all syns that have this as postsyn, and find
   //the ones that are of (transmitter) type, and add those to add to me. Etc.
   
   spksyn.add_hole( "postsyn_receptors" );
 
-  spksyn.add_model( "postsyn_receptors", gAMPA );
-  spksyn.add_model( "postsyn_receptors", gNMDA ); //automatically do this for all types that receive "glu". Every time, normalize for all of them add add that amount or whatever.
+  //spksyn.add_model( "postsyn_receptors", gAMPA );
+  //spksyn.add_model( "postsyn_receptors", gNMDA ); //automatically do this for all types that receive "glu". Every time, normalize for all of them add add that amount or whatever.
 
   spksyn.add_hole( "presyn_firetime" ); //name is like "tspk" or some shit.
   //spksyn.add_model( "presyn_firetime", adex ); //or spiker or some shit?
@@ -137,9 +133,11 @@ void make_adex()
   spksyn.specify_event_adder( "presyn_firetime" ); //There is only one of these? It is outside? Update function specifies it. Based on that, it updates
   //every turn, to "schedule" events I gues.
 
+  spksyn.specify_scheduled_var( "delay" );
+  
   //Need to specify e.g. how to build it based on "delay", etc. Like, how many "holes", what is max number, what is min/max delay, etc.
 
-  spksyn.specify_event_trigger( "t_hit" );
+  //spksyn.specify_event_trigger( "t_hit" );
   
   //spksyn.add_intern_var( "pren" ); //Do this by "add model type", which will be a presyn/postsyn neuron? there must be only one of each etc.?
   //May not have a presyn neuron though haha...
@@ -241,28 +239,73 @@ void make_circuit()
   
   lm.add( adex, "adex1" );
   lm.add_to_model( "adex1", "conductance", gLeak, "gL1" );
-  lm.add_to_model( "adex1", "conductance", gAMPA, "gAMPA1" ); 
-  lm.add_to_model( "adex1", "conductance", gNMDA, "gNMDA1" ); 
+  //lm.add_to_model( "adex1", "conductance", gAMPA, "gAMPA1" ); 
+  //lm.add_to_model( "adex1", "conductance", gNMDA, "gNMDA1" ); 
   lm.add_to_model( "adex1", "current", Iinj, "Iinj1" );
+  
 
   lm.add( adex, "adex2" );
 
+    
+  
 
-
+  //Add to model, add to model hole, add to model hole (?!?!!), model type that I will forcefully add, name of forcefully added
+  //This part is already "connecting" them, by specifying this model as the "glue" between them.
+  //Why not do that? Much easier ;)
+  //Here was old way (specify each)
+  //lm.add_to_model( "syn2-1", "postsyn_receptors", "adex1->gNMDA1" );
+  
   lm.add( spksyn, "syn2-1" );
-  lm.add_existing_model( "syn2-1", "postsyn_receptors", gAMPA, "adex1->gAMPA1" ); //REV: Is that the name IN the model or what? Maybe?
-  lm.add_existing_model( "syn2-1", "postsyn_receptors", gNMDA, "adex1->gNMDA1" );
-  lm.add_existing_model( "syn2-1", "presyn_firetime", adex, "adex1" );
+  lm.add_to_model( "syn2-1", "postsyn_receptors", "adex1->conductance", gAMPA, "syn2-1_gAMPA" ); //REV: Is that the name IN the model or what? Maybe?
+  lm.add_to_model( "syn2-1", "postsyn_receptors", "adex1->conductance", gNMDA, "syn2-1_gNMDA" );
+  lm.add_existing_model( "syn2-1", "presyn_firetime", "adex2" );
   
   lm.add( spksyn, "syn1-1" );
-  lm.add_existing_model( "syn1-1", "postsyn_receptors", gAMPA, "adex1->gAMPA1" );
-  lm.add_existing_model( "syn1-1", "postsyn_receptors", gNMDA, "adex1->gNMDA1" );
-  lm.add_existing_model( "syn1-1", "presyn_firetime", adex, "adex1" );
+  lm.add_to_model( "syn1-1", "postsyn_receptors", "adex1->conductance", gAMPA, "syn1-1_gAMPA" ); //REV: Is that the name IN the model or what? Maybe?
+  lm.add_to_model( "syn1-1", "postsyn_receptors", "adex1->conductance", gNMDA, "syn1-1_gNMDA" );
+  lm.add_existing_model( "syn1-1", "presyn_firetime", "adex1" );
+
+  //OK, now I've specified:
+  //1) Existence of adex grp adex1 and adex2. It has gLeak and gInj.
+  //2) Existence of spksyn grp syn2-1. It uses a grp gAMPA added to adex1 as a "conductance" (which is a hole).
+  //This is created in both groups, in postsyn as the conductance; and in the presyn (synapse) as the postsyn_receptors (which is a hole).
+  //   Finally, it has adex2 fill the presyn_firetime.
+  //3) Existence of spksyn grp syn1-1, with same, but now with presyn grp adex1. Furthermore, it creates new forced model to glue them together,
+  //   in same way as syn2-1. Note in some cases, I can name them same thing (i.e. all AMPA writes to AMPA). If that is the case, it will detect it
+  //   already exists, and do what? gAMPA model now has not only multiple items, but also multiple MODELS (grps) that it is receiving from. That should
+  //   be fine as long as update function is written to handle it ;) And furthermore must be updated correctly...?
+
+  
+  
+  //lm.add_existing_model( "adex1->gAMPA1", "gSyn", "syn2-1" ); 
+  //lm.add_existing_model( "adex1->gNMDA1", "gSyn", "syn2-1" );
+  
+  //lm.add_existing_model( "adex1->gAMPA1", "gSyn", "syn1-1" );
+  //lm.add_existing_model( "adex1->gNMDA1", "gSyn", "syn1-1" );
+
+  //#########
+  // ########   REV: I could have this model forcefully add a model type to the other guy of the "conductance" type. Ah, that works nicest!!!!
 
 
-  //SPKSYN are *EVENT* models (update only when a certain variable happens). We need to specify that variable.
-  //All others are *NORMAL* models (update every dt)
-    
-  //Now I literally make all the logical models out of those...
-  //Some of them automatically make variables?
+  //Is this correct (i.e. specify from postsyn receptor, to add a "guy" to me?) How do I know how much is "released". They have to compete to get
+  //transmitter, then I need to "distributed" it? I need to have "access" to each one? It should be the "synapse" who writes to gNMDA and gAMPA for me..
+  //Should I specify the connection from "both sides"??? Hitweight is what feeds "gSyn" in the update thing? Furthermore,
+  //This is way better, in this way I know that syn2-1 has postsyn receptors are AMPA1, and furthermore AMPA1 has pre model that is spiking synapse...
+  
+ 
+
+  //Idea is that all models have "holes", or "transducer" type things, that can have one or more things....and our job is just to hook up those
+  //things correctly...
+  //but, the most natural way when making a CONN is to specify pre and post from the CONN. So, for example where I added existing model "adex!" as
+  //the postsyn receptors, I know that I need to make some way to process "hitweight" from "postsyn receptors". Do I need to go through and check for
+  //"both way" connections? For example, there are 2 "incoming" groups to gAMPA1. gAMPA1 will handle that though. I guess. It will iterate through ;)
+
+  //Through the start and end of each. It will handle them equivalently, accessing the parts that it wants to. gAMPA in this case has some other
+  //parameter, which is like "NMDA-AMPA relationship". Which is kind of like uh, strength of NMDA guys, relative amount of conductance they get etc.
+  //This could be per-guy, or not. I could add those parts as part of the connection model, and then add to the other guy "together". Problem is where
+  //the N-to-1 hits. Do it this way for now I guess...
+
+  //IF I were to basically "add" those bits to it, and say, yea, postsyn receptors are AMPA1 and NMDA1 over there, or, I could include the postsyn
+  //receptors HERE (are they a model?), and create them here? No need...
+  
 }
