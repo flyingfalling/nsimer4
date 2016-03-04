@@ -1043,7 +1043,30 @@ They are all updated.
 
 //hitweight(t) = A(t) * r(t) * u(t) //For example, for STP synapse?
 
-MODEL( )
+How about another "scheduler" type? Like, that schedules regular "electrical spikes" or smthing. tnow % 5 ms == 0 or some shit. Or like, have a specific
+list of "spike times" to spike? Or add them as "offsets". Problem is there is a limited number of them at runtime? I can dynamically allocate it though,
+hm. At "update" time it is static. Although it can be changed from each of the guys.
+
+
+
+//Utility?
+MODEL( Scheduler )
+
+Updates every turn:
+How are variables named/initialized? This is not a "typical" guy, it is a person who determines hit time. I know hit time forehand (based on syn model),
+and I schedule the (partial?) update at a time in the future. All I get is (model grp), (event trigger time). Implementation is hidden. And it "schedules"
+members of that group as simple times. If I "already" set "last spike time" to the future, that's a problem...because then I erase like "previous" spike
+time... Wait, if postsyn guys check every turn..just check the last hit time of the synapse to see if it went off? Might actually be faster rofl.
+Problem is that some models need to know "last" hit time and "this" hit time for that. So, I can either schedule the hit time (and keep it all around
+in memory? Or have a full variable for every guy to store it...). Might as well "schedule" it, i.e. keep ITEM NUMBER as well as TIME around. Since it's
+always in DT chunks, um, I can just um, schedule it based on dt number offset from now. But that requires fmod. Ugly. Anyway, just do it. I.e. don't
+make it a "model", but a "conditional updater for events".
+
+For the post guy, I call the post update thing.
+
+For scheduling the events, I just give it a condition (event time i.e. spk time of presyn neuron is > tnow ). I could give it a more complex function to
+"schedule" things, but meh. It schedules "time" and "index". I tell it what to look at, is presyn of N, specifically last spike time.
+
 
 MODEL( STPsyn ) (only updates at hit time???? I.e. something ELSE calls.)
 
@@ -1102,3 +1125,106 @@ W(t) = W(t-1) + secondperiod*( F( V(t) ) )
 
 
 //Check all guyes, is tspk >= tnow? If so spike and shit ;)
+
+
+
+SYNGRP is the "connection" between the neural models, but it is updated by scheduler thing. Whereas neural models are just normal "every" update.
+Spike time conditional is a conditional guy, at update time. Yay.
+
+
+1) OK, So I need to make a "scheduler" type, a class that gets the "condition" to watch for, and the grp to do it for (only 1 grp). Needs to have
+"range" of that grp to work over too.
+
+2) Need to make a "model" type that has the update function. Models have like, their update function, and also um, list of (pointers?) to external models.
+Some models can be like, "abstract", like gX or IX or some shit. They are not necessarily same models, they may be impls of same model with different
+params etc. How to differentiate between different models and different items of models? Models will cause a pointer to a specific GRP (into which I will
+index directly, in order of some kind, unless there is a re-ordering error). ITEMS are more of a problem, because I need "connections" to them basically.
+Each gX might be an item directly, what's the difference? One needs "offset" pointer (and iterates from start/finish of my portion), one is direct, i.e. my N points to N directly in the grp. Is there any need to differentiate these? one of them is a grp of just one correspondence. Many things are like this.
+I can determine this directly by determining if I am (ever...?) iterating "inside" the grp? Are they in same order? Who cares? Well it matters because for
+e.g. "synapses" it is a thing...ah, it's the difference between like a uh, connection, and a direct thing. OK. That's the difference. So in case of gX,
+could be multiple models, multiple connections. I specify that in some way...? I need to specify whether it is a (sub?) model, or it's a connection.
+In this case, it doesn't matter what the heck it is, all that is relevant is how I "access" "each" gX. Which is specified by USER. E.g. he specifies,
+go through all X in MODELS, for al X in ITEMS, etc.
+
+For example, this is the problem. How do I iterate through all "presyn" guys for example. For example in scheduler, I can do it because RICHARD is
+coding it...it has some "range" of a guy over which it iterates. How about for everything there is ALWAYS a range, sometimes it is implicitly 1? If
+the range is not implicitly 1, there is a correspondence of me to that group, which holds for all variables in that group (i.e. every ITEM in that group).
+I explicitize this using the names I go over. I can go through forallitems() or forallgroups() for a given (type?) of guy. If it is items, they can be
+from multiple groups (it will know which group it is from?). We need to iter through both I guess...each "grp" within me, has a pointer of "items" somehow heh.
+
+internally I store it as a start/end for each grp (connection) I  have. Anyway, do I always have to specify it? How do I know it is a connection? do they
+save (mutual?) pointers?
+
+So, the question is, once I've defined models, how do I implement them?
+
+1) Need to add "grps" as "things" in "holes". E.g. model "holes" in Vm updater. for gX type. I tell them, I'm one of these. output is g(t). does it
+always look for g(t)? Named variable? I guess..."type" of variable or some shit...
+
+Can "holes" be connections? I don't think so? They may be though. Input to gX will (may?) be blah?
+
+AH FOR MODEL gX. If I just get g from gX, that's fine. But if I get gi from it, that's a connection. OK...
+
+for example if there is only one gX with a g(t) value, it is e.g. gotten/updated from presynapses. In which case I am iterating through hitweight(i)(t)
+or some shit. Where i is specified as "my" group of guys. How does user specify that group of guys? By "distributing" a connection. Heh...figure that
+shit out I guess. Need a method for determining connection between N and i of target...
+
+
+
+MODEL can have a LIST of MODEL (that are referred in certain ways).
+
+Models must be of some "type" or some shit. Realize if it's illegal or smthing.
+
+
+struct model
+{
+
+	
+ void update() {}
+
+ std::vector < std::string > externlabels; //e.g. is this the gX list or is this the I list, or what?
+ std::vector < std::vector< model* > > externmodels;
+}
+
+
+
+Question is like, what is a variable? How to reference "variables" and shit.
+
+
+Do all "variables" have "owning" model and shit?
+All modles have "update at all times" or "update by this scheduler".
+
+Models need to specify "holes", items that will be operated on. User then "fills" those, and assures that the iteratable ones will be iterated
+through in the "implemented" update function, etc.
+
+
+How to deal with "times" though? All times refer to times. Can anything refer to t-1, t, etc.?
+
+
+I define "models", which define connectivity between model (types?). Some model "types" are filling "holes" (possibly?) in models. In other wise,
+the "whole" model is a combination of them. But, we don't know where the "connection" (seams?) are. There are none, everything is connected haha...
+We can just generate them in chunks? Or define the whole thing abstractly, and then allocate each thing using a similar/same iterator. I.e. use the
+same iterator for some guys. So, group consruction is specified by iterator? But how does it find the "other" guy. In that case, I specified what,
+that it "could" have a spiking synapse it gets input from. But, we don't know "which" ones it gets the input from? I have to specify it?. Furthermore,
+it might be multiple!!! Each might be of different types (fuck).
+
+How do I specify that there could be "many" or "just one". Is there any case where there is just one? if it is of a "type" by default, there could be
+many ;) Is there any case where it is like, 3-level going? Like multiple gAMPA, go into a single gAMPA that goes into the main eqn?
+
+May be of some known or unknown model types? Sometimes it may be instantiations of same model (ah...?). Best of course to have a single "model defn"
+so that we minimize amount of code? If we specialize code, it's painful. I.e. we have them all pointing to copy of code in the class. But the class could
+be the implementation class. So I "build" impl for each? No, not good. Update is calling diff funct each time, device code each time,,,,I can do that
+I think!
+
+Do it at "construction" time. But user already tells what to do for each. So doing it up there was unnecessary! OK!
+Do I "build" a new model for each guy? But then the "edges" of the model are not known, which is the problem... A model could take specific guys as
+arguments each time
+
+
+What did I decide on last time? That I make the model? Model "chunks" are always made at real time? I need to tell how to "fill" the variables and shit.
+How to actually connect.
+
+I can make a "theoretical" model, and then I can "hook" the theoretical models together in parts (hm). To make like "chunked" models. And then I can
+hook "chunked" models together too if I want. Since I'm going to distribute to a single thing. Problem with "chunked" models is it might e.g. have
+multiple gAMPA etc. in it, so when I go through to select "gAMPA" variable of some guy, I will always have to iterate over it. Like how do I know which
+gAMPA guy is "my" gampa one, if I'm an incoming synapse? Do I form them at construction time (of the model itself)? Like the model has some number
+of guys, one for each incoming guy. It's added there. It can have "some number" of guys. Ah, it adds those guys. They're synapse guys. OK.
