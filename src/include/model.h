@@ -309,3 +309,66 @@ void make_circuit()
   //receptors HERE (are they a model?), and create them here? No need...
   
 }
+
+
+
+
+//REV: OK, time to get serious. I was figuring out how to place in a volume in 3D space using some parameters.
+//More importantly, how do we specify "size", i.e. what do we generate from?
+
+//We need to "generate". Some parts had an XYZ position, other's didn't. I was assuming a regular reality, in which all can be transformed to same coordinate space...fine.
+
+
+//I had things worked out. So user specifies models, then specifies how to generate them separately.
+//I.e. draw N neurons from X. need to separate the groups. Painful.
+
+//Problem with axon retro, is we need to possibly transfer at time slices of less than DT. Which is the issue.
+
+//Do I need to specify a total number, or what? If I route the axons and dendrites, I will know what is hit by the electrical field... I can mostly assume its axons going in.
+//How do I specify a "node" that is activated though? I could have a single guy, and have it change from GABA to AMPA etc.? I.e. make positive to negative by not specifying
+//whether it was GABA or AMPA...? But, it's postsyn response, so kind of weird...
+
+
+//Trans-dimensinal is difficult. But, we could specify that they are 3 groups, and somehow let it vary between GABA and AMPA? I.e. don't specify GABA/AMPA, but rather let all
+//types vary between negative and positive, and vary their postsyn responses...? Assume 2 types, but NMDA will have that gating thing that makes it complex...?
+
+//Anyway, give myself a way to make models. We can name all presyn and postsyn the same thing (like all use a single transmitter, or two types, or something). Problem is we
+//need to try/hypothesize different STRUCTURAL models from a possibly infinite model space...shit.
+
+//REV: I need to decide how to code this...
+
+//As is I build it in functions whicch add/blah to models. Fine. Question is how to compile that to CPP? Or CUDA? I.e. I basically give it C++? Or is there limited way?
+//Yea, I think I specified it in some specific way...
+
+//And I need to determine dependencies from models.
+
+//Build "group" from "abstract model". And connect them up. Using synapse models. But stuff like "presyn" and "postsyn" are what? Integers. How was I handling that?
+//They are correspondences? Everything is a correspondence? Hmmm...
+
+//REV: I guess to make GPU, I need to be careful. Every X can be done as an item, but keeping same group within same block is ideal? Or do one group at a time? What if there
+//aren't enough? if they just access differnet pointers, that works fine...
+
+//Only serial things are basically where I update spike pointers. These must be stored per-block so that I can use synchthreads to ensure that all presyn/postsyn threads
+//are done updating first? Oh...shit. If I call device functions, there is no guarantee that all blocks will be finished computing before the next device function is called.
+//Thus, I need to ensure that all models are barriered before I go to the next group? Some groups don't have dependencies, but for example, I can't check whether a neuron has
+//fired this turn until I am sure the neuron is finished updating...so those must be in same block at the very least.
+
+//So...presyn neuron groups, must do that. Is there a way to synchronize the whole CUDA device within kernel calls? Or do I want to make recursive cuda calls?
+//For example between time points, I assume that all guys are updated by the time next timepoint come. And that DT is only updated...not while other guys are going? Do all guys
+//keep a copy of dt? Copied at beginning of turn? Basically use BLOCKS as mini-SMP. This is fine, but since there will at some point be cross-block communication, that must
+//either happen between kernel calls... Or something. Or use kernel-inside kernels. That seems like the best bet.
+
+//Note rand generation can be done in device functions, so that solves that problem...need to convert from user code though...
+//I can get normal, uniform, lognormal, poisson...
+
+//Reduction type things are fine. But, at any rate, seems using KDP will work best... just be careful about where I launch kernels from... I.e. only X=0 controls launches,
+//although I could do memory transfers too I guess...?
+
+//Assume that we do connections after neurons/elements. In that case, we effectively only need to launch 2 "kernels" per time step, which each may call many device functions.
+//If they're independent, we are OK. If not, we have a problem...? Within each kernel launch, I have many device functions, which are called one at a time? by each thread,
+//in parallel...knowing its start/end time...? In order. Fine. That forces me to compute "offset" for each guy or something though..? Nah, no need to synch within threads...
+//Same update function, different data (params etc.?)?
+
+//For shit like um, gap junctions, we need to keep V-1 around, which is the problem...if the other guy's Vt is updated and v-1 is erased before this guy reads it, it is fucked.\
+//So, be careful about that...i.e. when Vt-1 is actually updated...
+
