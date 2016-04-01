@@ -221,6 +221,14 @@ void adex_thing()
   adex.add_hole( "conductance" );
   adex.add_hole( "current" );
 
+  adex.add_intern_model( pos3d, "position3d", "pos" );
+  adex.add_intern_model( gLeak, "conductance" "gL" );
+  
+  MODEL pos3d; //x,y,z etc.
+  pos3d.add_intern_var( "x" );
+  pos3d.add_intern_var( "y" );
+  pos3d.add_intern_var( "z" );
+  
   MODEL gLeak;
   gLeak.add_intern_var( "g" );
   gLeak.add_intern_var( "E" );
@@ -238,7 +246,7 @@ void make_circuit()
   logicalmodel lm;
   
   lm.add( adex, "adex1" );
-  lm.add_to_model( "adex1", "conductance", gLeak, "gL1" );
+  //lm.add_to_model( "adex1", "conductance", gLeak, "gL1" );
   //lm.add_to_model( "adex1", "conductance", gAMPA, "gAMPA1" ); 
   //lm.add_to_model( "adex1", "conductance", gNMDA, "gNMDA1" ); 
   lm.add_to_model( "adex1", "current", Iinj, "Iinj1" );
@@ -265,6 +273,10 @@ void make_circuit()
   lm.add_to_model( "syn1-1", "postsyn_receptors", "adex1->conductance", gNMDA, "syn1-1_gNMDA" );
   lm.add_existing_model( "syn1-1", "presyn_firetime", "adex1" );
 
+  lm.add_symbolic( "neurons" );
+  lm.add_to_symbolic( "neurons", "adex1" );  //one is excitatory, other's not.
+  lm.add_to_symbolic( "neurons", "adex2" );
+
   //OK, now I've specified:
   //1) Existence of adex grp adex1 and adex2. It has gLeak and gInj.
   //2) Existence of spksyn grp syn2-1. It uses a grp gAMPA added to adex1 as a "conductance" (which is a hole).
@@ -275,6 +287,427 @@ void make_circuit()
   //   already exists, and do what? gAMPA model now has not only multiple items, but also multiple MODELS (grps) that it is receiving from. That should
   //   be fine as long as update function is written to handle it ;) And furthermore must be updated correctly...?
 
+
+  //Then, after I have specified all this, I need to generate the groups, and the parameters.
+  //The groups and parameters can be co-generated, using "generators".
+  //Generators can be quite complex.
+  //Group size can be drawn from either a global distribution, or they can be local.
+  //For example, I can manually specify size, etc.
+  //Just offer many distributions.
+  //Local e.g. connectivity functions are nasty.
+
+  //I need to specify the "generator" for # of members etc. in each group.
+  //Can some groups have iterms that are not exactly N size? Crap....
+
+  //Every "model" has a "natural" implementation of a single "element" as a struct. This can (is?) compiled into array-format.
+
+  //================ REV: MAKING/PLACING NEURONS ===============//
+  
+  size_t width, height, depth;
+  //post3d is an actual implementation of it with variables etc. SET. This way it knows it is of the correct type...( need to check that).
+  //It copies those into optimize array-first shape for GPU computation later.
+  double edgesize;
+  std::vector<pos3d> grid = make_grid( width, height, depth, edgesize ); //This will tile it.
+  //Note: shit, we don't know how many there are of each grp beforehand, since they will be shuffled here. So we need to separate it into the 2 grps
+  //from which each grp will be generated. In other words, this is "above" and "before" grp construction.
+  
+  double xdensity1=0.05, ydensity1=0.05, zdensity1=0.05;
+  double xdensity2=0.05, ydensity2=0.05, zdensity2=0.05;
+  density1dfunct xfunct1 = uniform_funct( -100, 100, xdensity1 ); //Need to tell "density" as well? E.g. are same number in -50 to +50 as there are in -100 to +100?
+  //If we want the same total number but over a larger region, it needs to be lower density of course.
+  density1dfunct yfunct1 = uniform_funct( 0, 0,  ydensity1 );
+  density1dfunct zfunct1 = uniform_funct( -100, 100, zdensity1 );
+
+  density1dfunct xfunct2 = uniform_funct( -100, 100, xdensity2 );
+  density1dfunct yfunct2 = uniform_funct( 0, 0, ydensity2 ); //in some cases, it could depend on the y position...by some scaling or non-linear function etc. These
+  //are pre programmed and user can select them by name.
+  density1dfunct zfunct2 = uniform_funct( -100, 100, zdensity2 );
+  
+  density3dfunct grp1funct( xfunct1, yfunct1, zfunct1 ); //some function that can access other variables? Tells probability of a neuron being at this position, given the X Y Z position. It tries to access other variables maybe? For example, relative to some "input". In this case, it is only relative to independently, where in Y we are.
+  //Leave it up to user to ensure correct overall scaling of probabilities. Compute it directly from density.
+  density3dfunct grp2funct( xfunct2, yfunct2, zfunct2 );
+
+  shuffled_generator sg;
+  sg.add_grp( "adex1", grp1funct );
+  sg.add_grp( "adex2", grp2funct );
+  sg.distribute( grid ); //will have an error if all probs are zero at this point?
+
+  implmodel im( lm );
+  //Now I want to distribute grid among it.
+  im.implement( "neurons->pos", sg); //this will find corresopnding one of each group and do it.
+  //ROFL, these are already all manaully set, so no point.
+  //How to do the rest of them.
+
+  //REV: I wanted to set the size of grp and everything manually, which helps. So, somehow size of "neurons" is now set! I can access it.
+  gaussgen adex1Vresetgen( -65.0, 1.0 );
+  gaussgen gLgen( 1.0, 0.1 );
+  gaussgen ELgen( -65.0, 1.0 );
+  im.draw_parameter_values( "adex1->Vreset",  adex1Vresetgen ); //does it this way, easiest. We know size from blah.
+  im.draw_parameter_values( "adex1->gL->g",  gLgen ); //does it this way, easiest. We know size from blah.
+  im.draw_parameter_values( "adex1->gL->E",  ELgen ); //does it this way, easiest. We know size from blah.
+
+  //This "draws" it, how about resetting to some initialized values too (i.e. we need to "remember" init values. Whatever.
+
+  //=============== MAKING CONNECTION GRPS ===================//
+  double sxdensity21=0.05, sydensity21=0.05, szdensity21=0.05; //number of synapses per unit area. (uniform in hyperblock)
+  double sxdensity11=0.05, sydensity11=0.05, szdensity11=0.05; //number of synapses per unit area. (uniform in hyperblock)
+  double sxdensityALL=0.05, sydensityALL=0.05, szdensityALL=0.05; //number of synapses per unit area. (uniform in hyperblock)
+  //This times size of area should yield number of synapses. It's much easier to "draw" synapses this way... We know total number of synapses over
+  //all, but not which group they're from(!). So we can do a "synapses" group type thing...and draw them all I guess? But then it's not space they're
+  //drawn from, just normalized/uniform density of all synapses of whichever type.
+  density1dfunct sxfunct21 = uniform_funct( -100, 100, sxdensity21 ); //Need to tell "density" as well? E.g. are same number in -50 to +50 as there are in -100 to +100?
+  //If we want the same total number but over a larger region, it needs to be lower density of course.
+  density1dfunct syfunct21 = uniform_funct( 0, 0,  sydensity21 );
+  density1dfunct szfunct21 = uniform_funct( -100, 100, szdensity21 );
+
+  density1dfunct sxfunct11 = uniform_funct( -100, 100, sxdensity11 ); //Need to tell "density" as well? E.g. are same number in -50 to +50 as there are in -100 to +100?
+  //If we want the same total number but over a larger region, it needs to be lower density of course.
+  density1dfunct syfunct11 = uniform_funct( 0, 0,  sydensity11 );
+  density1dfunct szfunct11 = uniform_funct( -100, 100, szdensity11 );
+
+  density1dfunct sxfunctALL = uniform_funct( -100, 100, sxdensityALL );
+  density1dfunct syfunctALL = uniform_funct( 0, 0, sydensityALL );
+  density1dfunct szfunctALL = uniform_funct( -100, 100, szdensityALL );
+  //Randomly distribute them, not on grid, and without caring about x/y/z pos...
+
+  //std::vector<> ;//what is this a collection of? It's the collection of pre/post basically hahahaha. I.e. which ones from each "group" are selected.
+  //This is weird, what if I want to select pre/post neuron based on x/y/z pos?
+  //So, what is this doing? Distributing the total density to the groups as I wish. And their relative "positions"? I.e. upper neurons more likely
+  //to have connections, but I don't care. Why not co-generate. So, I now also actually generate for pre/post group! Based on being selected from this
+  //group, and possibly based on something else such as "x/y" position of pre/post. Like, drawing from a multinomial, but with weights based on the
+  //(post) synaptic neuron's x/y/z pos? Yea, that's what I'm doing anyway. For each neuron I make a postsynaptic distribution, and draw some number
+  //of synapses from that (how many are allocated for me? Must be related to my integral compared to total my density). In this case I specify the
+  //pre/post CORRESPONDENCE directly, but that's a dirty word (to refer to the correspondence). But, all model-model interfaces must have a corresp
+  //that defines how they are connected. So, what are we defining? First, we choose the presyn, and then based on presyn, we choose the postsyn?
+  //Hm, I don't think that will work. We need to "co-choose" them?
+
+  //I like the "choose pre, then choose post". So, first, we choose (randomly) the pre from some function. Then, we choose post from some function,
+  //which may depend on the chosen pre. This is great and fine, but it requires us to "know" about the implicit "pre" and "post" correspondences that
+  //exist for every var-var correspondence. It's easiest to simply force every single variable to have a correspondence.
+
+  //So, we are doing something like selecting a correspondence! Obviously we need a way to distribute that. We already have the "abstract" model.
+  //Do we have a pointer to a "pre" model and "post" model? I guess so...what we are doing is selecting that. Problem is, it is an integer...the
+  //index. So, selecting it as a "variable" per se might not be the best approach since we assume all variables are real numbers...
+  //But, we could assign distributions? O variables? My goal was to make it so that such things were totally invisible to the user? I guess I could do
+  //that...but then how would user specify it? And more importantly how to specify it efficiently? I kind of want to do it in parallel. Which is
+  //possible only if I know the number beforehand. And each guy, it chooses the pre, then it chooses the post. Fine. The other guy, it did them all in
+  //parallel. So, the other guy could do them all in parallel too. Problem is for choosing positions, we don't know if they're "taken" or not.
+  //OK great, so for synaptic density, we know the # of synapses, and we just need to choose pre and post. So, first we choose pre (for each in parallel),
+  //from a uniform, or evenly distributed in some natural way. Then, for each neuron, we compute the probability for each post as a distribution
+  //based on all other neurons' probability (distance). Probability of the synapse going to ONE of them is 1.0, so I just scale it. Do cumsum etc. Then
+  //drawn N from that. Either way same amount of work, possible postsyns are always the same...though I'm doing the same work for each synapse with
+  //same presynaptic ugh...better to choose a number for each neuron (from the total? or something?) around the mean, and then pre-compute only for
+  //each cell separately...
+
+  //No, just have it access the same matrix each time separately, great.
+
+  //Still need to actually "do" it. If all I have is an abstract model, connections between them, and ways to distribute individual parameters/variables,
+  //that is fine. but it only distributes variables that are "explicit". For connections I need to effectively distribute what i had considered an
+  //"implicit" variable, i.e. one that is an implementation detail. Knowing the "index" of pre/post model is bad, I need a way of referring to it
+  //selecting them. Not the variable, but the target. So, make that a possiblity, make some function to do it, and the function will know that it is
+  //selecting discrete distributions. Good. So, example:
+  //first I need to make the "number" of synapses hard coded beforehand!!!
+  //2 things, GIVEN that I select a pre, what is prob of post?
+  //and prob of selecting PRE.
+  //The total density, and relative density, above should tell what is happening? Better to select for each group separately from pre-computed
+  //sizes...? Or, should I select pre/post in real time as I go? I could do that too, but really quite inefficient, and then I have to manually
+  //express that I have drawn "pre" and "post".
+
+  //E.g. presynaptic connections are more likely from more "upper" neurons...
+  //How could I literally manually split the neurons into Nsyn/Npreneurons? I would have to actually refer to "number" of neurons, size I do want a
+  //"size" reference after all...
+  //  correspondence_distribution synselector21( "adex2", uniform_selector( "adex2", density3dfunct(sxfunct21, syfunct21, szfunct21) ),
+  //					     "adex1", distance_selector( "adex1" ) );
+  //Does it *always* go from arg1->arg2? What if arg1 depends on arg2? That's fine too. Dependency? I.e. can I select "post" first? Can I co-select them?
+  //separate them out first.
+
+  //Selects pre neurons...
+  //correspondence_distribution synselector21pre( "adex2", uniform_selector( "adex2->pos", density3dfunct(sxfunct21, syfunct21, szfunct21) ) );
+  //First I generate the "number" of synapses, problem is I'm only setting "correspondece" now.
+  double integral = integrated_density; //integrated density of synapses of this type over the space...will depend on min/max of area of course, fuck.
+  //I can approximate it numerically, by computing and dividing by the space. Will take forever though...
+  //This will determine, for each synapse, WHERE it came from. Problem is I need to know # of synapses lol...assuming I know the integral,
+  //I can always compute that raw, if the densities represent actual probabilities.
+  //Symbolic integration is like, sometimes impossible. I need to know scale in which to compute the integral for approximation purposes...
+  //If user will do it. Haha force user to integrate his own function (i.e. provide # of synapses)
+  //Give a way to do that if he is too lazy (by literally integrating on grid, adaptively, or non-adaptively with some h). Integral will be h/space.
+  std::vector< correspondence_t > corrs = generate( density3dfunct(sxfunct21, syfunct21, szfunct21), integral );
+  //Now I need to distribute these to actual presyns ;) All of these need to "grab" a value from neurons.
+
+  //REV: WHAT THE FUCK TO DO.
+  //DEFINE PRE? DEFINE POST? MIGHT BE CO-GENERATED? I CANT IMAGINE BUT POSSIBLE? FUCK IT?! INDEPENDENT?
+  //HOW TO GET #? FROM INTEGRAL? OK. NOW I LITERALLY HAVE A VECTOR OF IT. I DONT LIKE THAT. I DONT WANT THAT.
+  //HOW TO RE-DO NEURAL GEN? THERES SOME SET, AND ALL NEURONS ARE GRABBED FROM EITHER OR. IN OTHER WORDS, ITS CORR INTO THAT ARRAY, FUCK.
+  //NEED TO KNOW HOW MANY OF EACH THERE ARE. NOT POSSIBLE IN PARALLEL.
+
+  //I refer to each neuron, not the index. Great. User might want to refer to the index though. Give him that.
+  //Like, each one has 1/10 of total or some shit. Need to know size then. Co-generate size and other variables, fuck the world.
+  //Co-generate multiple groups, pain in the ass. In that case, generate size first. Do I already know size? Drawing params always requires size first.
+  //But why, why not allow user to generate size adaptively. E.g. based on a target group or some shit. E.g. for each neuron, make 40 synapses. How to say
+  //"for each neuron"? Not possible? Implicit knowledge of what a neuron is, that they are "one" neuron, etc., counting.
+
+  //FUCK, if I have some sub-items kn for each n in N, we have a problem, because group has N items, but overall there are sum(kn) components, for each N,
+  //etc. Which is a problem, because what does a correspondence point to? Like, I want to point to the nth guy, but I want to know that this is neuron N,
+  //which has someparts. So are those models, holes? If they are holes, what? We iterate through them implicitly. Fine, how do we know to point to the
+  //Nth one though/ How can we know which guy it is? Can things overlap those borders? It's a pointer to those guys inside it. No way to discover which
+  //N my guys is a part of? FUck the world.
+
+
+  //Write out state. Deconstruct.
+  //I have nothing. I might not even have neural sets yet. What if i want to construct neuronsf rom synapses? Possible? Lewlw.
+  //Synapses from neurons, OK. I could make them have a size beforehand. Then hook them up. Fine. But whatever. Still need to generate them.
+  //In this case, based on neurons.
+  //What is a neuron? only a pos right now? Lol...force groups to be constructed through iterators. No explicit presyn definition.
+  //Refer to items, not numbers. As a set. Presynaptic density is a distribution too. Fine. So I select from presynaptic guys, of that, based on density.
+  //And from that, I generate the correspondence.
+
+  //Integral defines "scale" of drawing.
+  //NO, based on the model it "knows" what the connection is! fuck the world.
+  //It knows the logical connection, but we're generating based on possibly other parameters (we could manually specify them).
+  //In this case it is literally generating the correspondence between them also. Where is it stored? Does every group have a correspondence to
+  //every other fucking group? Always? If there is a connection. Here I am generating, but possibly not connecting. WHy can (t I co-do it.
+  //Define CO GENERATE type function? Generate CORRESPONDENCE. I.e. define the fucking corresopndence as I generate. Great.
+  generate_correspondence( generate_from_density( "syn2-1", "adex2", density3dfunct( sxfunct21, syfunct21, szfunct21, integral) ) );
+
+  //Or some shit. Great, just let it be haha.
+
+  sampler sss( "syn2-1",  dist(pre, post ) ); //samples based on the function of distance.
+  //Bases on the distance to "pre". What the fuck is pre, NO one fucking knows. It's POS of INDEX of 
+  
+  
+  //Requires xyz pos of pre,e tc. Asusming it knows what fucking pre is, etc. who the fuck defines this shit.
+  generate_correspondence( generate_from_density( "syn2-1", "adex1", draw_from_distance( ) ) );
+  
+  //This generates individual syn21, based on adex, and density3d funct. So it generates "items", and how they correspond. This literally generates just
+  //a correspondence to individual items of adex1. But, how many to generate? That depends on size of adex1, and integral? I know integral is total number
+  //of synapses (or density per unit space?). Total number. How about if I literally just want to randomly draw some number per guy... Will be generated
+  //from the density at that "region", the density funct which depends on neruron number or position or some shit. For example in this case I check how
+  //many postsyn I should create for each fucking adex1 neuron I go through, based on adex1 neuron's xyz.
+
+  //REV: what if I want to distribute otherwise, like distribute some number among adex1 neurons fucking neruons hahaha.
+  //In that case, I define number, and define a way to draw random adex1 for each synapse. Same fucking thing, in one number is told beforehand.
+  //Problem is what about like, multi-group type shit. I need to know numbers to separate them. Can't grow tihout fucking bound.
+  //generate_from_density( "syn2-1", "adex1",
+
+  //Might want to keep around a "global" count of number generated or somes hit. ugh.
+  //OK, this just generates the number. It generates specifically the correspondence. How do I know to generate the correspondence? This just generates
+  //the items. Might as well tell it which presyn guy there is too. In other words, I'm generating the "group", but a specific element of the group.
+  //Specifically, the presyn_blah. Not the value, THE FUCKING INDEX OF IT I.E> WHICH OF THOSE FUCKING ARRAY FUCKING ITEMS TO FUCKING POINT TO.
+
+
+  //REV: NO, corresponding way to do it would be to select PRE neurons
+  //of correct size from PRE, and then "distribute" those to syngrp.
+  //Will distribute "these" (generating them) among the targets, one each.
+  //note they will overlap in this case.
+  generator g;
+  g.add_grp( "syn2-1", predensityfunct );
+  g.distribute( "adex1" ); //This will try to distribute adex1 "targets"
+  //for each syn2-1 item. No, I provide the "grid" first. Grid is syns.
+  //So, need to generate syns. Then I distribute the presyn neuron idxs
+  //based on that. This is too complex for the user rofl. If I have to think about it, I can make mistakes rofl.
+
+  //REV: Look, I'm generating connections. I *know* they're between groups. They need to refer to the presyn item and postsyn item. That's all they
+  //refer to. Not the index, the *item*.
+  
+  
+  //Density describes a FUNCTION. This function
+  //will be based on the integral basically, which is a super pain in the ass lol... unless the integral is constant. I *must* provide the integral
+  //or risk having arbitrary non-integratable functions.
+  
+  correspondence_distribution synselector21pre( "adex2", "presyn_firetime" );
+
+  correspondence_distribution synselector21post( "adex1", distance_selector( "adex2->pos", "adex1->pos", distparams() ) );
+
+  correspondence_distribution synselector21( synselector21pre, synselector21post );
+  
+  //How does it know to select A first, then connect to B? One of them will be conditional other not. Dependencies. Fuck.
+  im.implement( "syn2-1", synselector21 ); //This will only generate size (i.e. pre/post correspondences). User knows nothing about that.
+  //But, he should...fuck.
+  
+  //REV: Just let user do size_t finding!
+  //Have a special variable for every "interface" variable, which is the corresponedence... Name it specially? Like "set correspondence" type things.
+  //Great. SEt the corresopndence based on e.g. pre x, pre y, etc. And post correspondence might depend on pre correspodnence, or vice versa.
+  //Good...I like that.
+
+  //For e.g. normally distributing as I tlaked about, that's fine.
+  //But what about for e.g. dividing normally. I need to know "size" of synapses, etc. I can do that if it is distributed. problem is that until now,
+  //"size" is only distributed on a per-variable basis. There is no group "size".
+  //So, I obviously need to make one. For correspondence purposes.
+  //Do correspondences one at a time? Or in parallel? Or something. meh, go.
+  
+  //I need to think about how "correspondence" will work. These two functions can reference each other I guess...
+  
+  
+  
+    
+  //implementer im;
+
+  //generator nposgen;
+
+  //Basically the problem is this.
+  //For every variable, I want to specify a function to generate it. This function must be able to depend on the variable values of ANY OTHER
+  //variable in the whole simulation.
+  //Furthermore, to "start it out", I want to be able to separately specify some skeleton on which to grow.
+  //For example, to determine the number of elements. Neurons are specified, synapses may not be initially.
+  //It should be possible to "co-generate" both parameters and elements. Like, probability of there being certain parameters with certain values.
+  //I want to basically say, like setparam( "blah", paramgen( PARAMS ) ).
+  //And "blah" could be multiple guys from multiple groups, In which case, it must have a way of specifically accessing the guys of each group by a
+  //local variable, which is shit difficult. Or is it that difficult.
+  //At any rate, at some point we need to actually generate a group from a non-relative distribution. For example, determining # of members.
+  //In this case, we provide a function that is not reliant on external things. A "grid function". And, this will generate members, and choose
+  //their positions. Which, in the end, will be a vector/vectors. Is there a growing vector size? For connections, I may literally want to
+  //grow the number of elements. If this is done in parallel, that is a problem ;) But, I don't think there is any other ways to do it ;)
+  //Than in serial. of course, we could do each one in serial, but no. Each neuron's postsyn in parallel? But, in that case um, prob of connection
+  //might be 2-way lololol. I'd still need to "grow" for each neuron...it's generation of e.g. connections which is expensive. If I pre-specify the
+  //number, it is very easy to do. I could just leave holes, but that's a waste of memory/space. Does actual number matter? Probably not so much,
+  //when it is very large. Set number, and distribute them among the neurons. That way I can do it in parallel. Or, pre-specify a MAXIMUM number,
+  //and a now number, so I can grow later. Oohhh. What if user wants to "grow" a number? Nah, for now, just force user to always specify a (maximum)
+  //size, not all of which may be used?
+  
+
+  //REV: So, how to do it. Specify size somehow, and from that it generates size. If there are any that are initialized, it uses that N size?
+  //Force user to specify a size? I assume that's the only way. Models have some natural size of actual elements, or do they need to? Assume so. if they
+  //rely on e.g. POSITIONS to tell number of elements, that works.
+  
+
+  //SO, we have the LOGICAL MODEL, which specifies actual connectivity of each piece. We assume all models must have same thing. Let us specify now
+  //how to generate the number of elements in the model. All models will have this (unless it is connection in which case it is pre-specified).
+  //All will have dependencies.
+  //Could use a "generator" to (co-) specify model size.
+  
+  //First, generate a uniform grid into which the neurons will be "place". Grids can be generated based on several factors, including "relation" to other
+  //groups that we pass as arguments? Do I want to define such things as "3d grid" or something? Position should be a base type I think...
+  //Generate the impl group of N "positions" first? Or use them as a gaussian at each pos? Or grow them in some way...?
+  //Easier to generate as well go... Could draw them based on some "property", such as Vthresh of particular neuron...,
+  //i.e. correlation. Ugh, difficult. Here I just manually set the value...
+  
+  //REV: I want to use this for liquid topology construction too, so be careful...
+  //Better to take (extract) mathematical form only and operate on those.
+  //Everything is a vector (an impl group?). So, first I generate it from what?  I could have some function that e.g. reduces probability as
+  //Y decreases between min and max. Do I want to arbitrarily define that function? To place the number of them. I could uniformly place them
+  //also, but with drawing decreased across the domain of the function. What do I need, integral function?
+
+  //REV: Need a function to sample from an arbitrary distribution. Use MCMC.
+  //Need to know the integral from the function, that's the problem...
+  //Just use rejection sampling
+  //Crap, even to use metropolis algorithm (rejection), we need to know integral because we need to know it integrates to 1.0.
+  //Just force user to provide an integral, OR let user specify that it will be discretized (numerically), and use cumsum to get it.
+  //Cumulsum is easiest, but difficult for aribtary guys (e.g. long-tail). Um, also user needs to choose "value". Also, values will be
+  //chosen in "chunks" so it won't represent the actual distribution in that.... I.e. value will be at the "edges" of the grid...
+
+  //Whatever, forget it for now... just have user pass in the function that does the drawing in each dimension (or in all dimensions). That makes
+  //it much easier. If dimensions are correlated, that's fine, they will happen in serial.
+  //The other possibliity is to "distribute" the actual "elements" to pre-defined "values". This is much easier... We can call this "shuffling".
+  //Or "allocation". Problem is generating the pre-defined values in the first place hehe. They could be generated in real timem by some algo that
+  //interacts with itself. I.e. does it generate the grid in real time and hide how it does it, or do I generate grid, and then place items in the grid.
+  //Way too complex though, that's the problem.
+
+  //REV: Just a choose a way to do it....pre-define distirbutions user can use/parameters (programatically), and just do those. Way easier.
+  //Allow user to have functions for some dimensions that reference/correlate with other dimensions? This will limit e.g. the number of
+  //dimensions that we can use...but user shouldn7t want more than 3 dimensions, so code up to 3 I guess... Or code 3, and of course others are
+  //special cases of it. This works best. And for each, we basically pass the function of each? Which may reference the others. And of course,
+  //a draw will draw one first, then do the other 2. Even if they are correlated...we can always choose one first right?
+  //Do I want to/need to choose total number? Crap.
+
+  //For example, we are drawing from N groups, but probability of it being of a given type will depend on the e.g. X, Y, Z location.
+  //Do we know the dependency? There can not be a circular dependency in there anywhere. So, for every specific choice of point X,Y,Z, the
+  //probability of drawing from one group or other other will be modulated.
+
+  //Can we also co-draw from a gaussian? E.g. place items, and also determine the thing? Like, should we PLACE a neuron here (maybe)? Need to
+  //draw in some way from the SUMS of all the group's functions at this point. That would require us basically constructing an overall PDF in the
+  //3d space by combining those of each of the groups independently. Which is a pain in the ass... For example I define the X,Y,Z thing of each group,
+  //which can interact. Furthermore, they can rely on OTHER groups, (either those being co-constructed, or already-construcdted groups, to e.g. form
+  //the correct topology). This is nasty. What if it depends on co-constructed group, like we want to place inhib neurons around excit? Forget that,
+  //too complex. Or if we want to place guys wehre there are few already placed or something along htose likes??? Like an interactive placing? Will
+  //try to maximize it based on "maximal" distance from other guys. In other words, basically a "growing" system. Seems pretty complex.
+  //But doing things like, referencing it to a certain target, this is needed. For determining connectivity, or for placing in the first place?
+  //So it can depend on arbitrary variables etc.
+
+  //Can we make "composite" groups, for example the 3d positions of the COMBINATION of 2 groups...yea I guess so....Figure it out when you need it,
+  //not before!!!!!
+
+  //How can user define how to place them in relation to another group? Have "holes", fine, but then user needs to define the function to "use"
+  //that too. Basically give a way to do "transforms" of space or something. First, just make the 3d grid lol. Based on arbitrary guys...
+  
+  nposgen.type( "shuffled_grid3d" );
+  //nposgen.setvar( "ndim", 3 );
+  //nposgen.setvar( "dimvarnames", {"x", "y", "z"} ); //uses these variables
+  nposgen.setvar( "dim1_var", "x" );
+  nposgen.setvar( "dim2_var", "y" );
+  nposgen.setvar( "dim3_var", "z" );
+  
+  nposgen.setvar( "dim1_min_max", {-100, 100} );
+  nposgen.setvar( "dim2_min_max", {-100, 100} );
+  nposgen.setvar( "dim3_min_max", {0, 0} );
+  
+  nposgen.togen( "adex1->pos" );
+  nposgen.togen( "adex2->pos" ); //adding multiple groups to generate with same generator in this case...
+
+  //Relative strength of each group? E.g. 0.4, 0.6 or something?
+  nposgen.genfunct( "adex1->pos", "x", uniform_params( nposgen.getvar("dim1_min_max") ) ); //REv: this can literally take a "params" argument that it references at runtime, i.e. it is not simplified to the parameter beforehand...
+  nposgen.genfunct( "adex1->pos", "y", uniform_params( nposgen.getvar("dim2_min_max") ) ); 
+  nposgen.genfunct( "adex1->pos", "z", uniform_params( nposgen.getvar("dim3_min_max") ) ); 
+
+  nposgen.genfunct( "adex2->pos", "x", uniform_params( nposgen.getvar("dim1_min_max") ) ); 
+  nposgen.genfunct( "adex2->pos", "y", uniform_params( nposgen.getvar("dim2_min_max") ) ); 
+  nposgen.genfunct( "adex2->pos", "z", uniform_params( nposgen.getvar("dim3_min_max") ) ); 
+
+  //REV: Figure out how to generate groups later. First, assume the groups are made, and make some simple way to "manually" set their parameters?
+  //This will make it much easier. OK, so for now, I will literaly just separately distribute them. But make shape so that I can specify after the fact.
+  
+  
+  //nposgen.setvar( "dims_min_max", { {-100, 100}, {0, 0}, {-200, 200} } ); //assumes density is same on any dimension...
+  //nposgen.setvar( "dims_min_max", { {-100, 100}, {0, 0}, {-200, 200} } ); //assumes density is same on any dimension...
+  //Assume they are always on a "grid". it will compute min-max for each. So we have, ((max-min)/gridsize) + 1 for the number
+  //of elements arranged on each dimension. How do we compute gridsize though. Force user to specify I guess... I need to get relative sizes of them.
+  //Right now it's basically: 2 to 1 to 0 (?). First, assume smallest is "1". So, that is free. Might have none fit there. Start with one fitting on smallest. Of course, size 0 is too small, so we immediately go to the next one (?). How do we multiply grids.
+  //We already do 1000 / 200. So that's 5. Then we do 5 / 100, that's 0.05. So, if we do 0.05*0.05, then that makes um:
+  //2000 fit in a 100 space. So, that's not right lol.
+
+  //Can I just solve the system of equations, N=xexpanse/L * yexpanse/L * zexpanse/L
+  //N/(z/L) = x/L * y/L
+  //N/(z/L) = x*1/L * y*1/L = x*y*(1/L)^2
+  //N*(1/(z/L)) = x*y*(1/L)^2
+  //N*(L/z) = x*y*(1/L)^2
+  //N/z * L = x*y*(1/L)^2
+  //1/z * N * L = x*y*(1/L)^2
+  //x * y * (1/L)^2 / (N * L)
+
+  //1/z =  x * y * L^-2 * L^-1 * N^-1
+  //1/z = x*y*L^-3 * 1/N
+
+  //N, x, y, z \in N
+  //N = x*y*z
+  //x*L <= xe
+  //y*L <= ye
+  //z*L <= ze
+  //x,y,z >= 1
+  //L = min(i) { (xe*ye*ze) - (x*i*y*i*z*i) }
+
+  //Does one of the dimensions always have to "fit" exactly? In which case we can roughly compute the correct L, then fix that (?) and fill in the other
+  //dims. Smallest dim has number equal to cube root of it or smthing?
+  
+  
+  
+  //adex1_gen.set_type( "uniform_grid" ); //by probability? or, size? Or, grid? I could grid them but why? 2d sheet, whatever heh.
+  //Need to set "number" of variables and shit.
+  //Add anonymous functions to specify density in X dim, Y dim, etc. Ugly.
+  //What if I want interaction between generators, for example, I want a total of 1000 neurons, randomly drawn between 2 different groups. Or, I want to
+  //randomly place neurons from multiple different groups. And generate them or some shit. Generating "size" before "blah"
+  //Let's do the hardest case of co-generating them, in a space, out of possible spaces, until all spaces are met!?! So "shuffling" them.
+
+  //All this has dependencies of course ;)
+
+
+  
+  
+  //Needs to use random number gens, etc.
+  //Let's imagine I don't care about the positions (though I should). Can a 3d pos be a more complex model. Yes, it is. It7s a 3d pos model and shit haha.
+  
+  //We haven't chosen which "side" owns the correspondences yet I guess... "ownership" means it must be "inside" the model, although other guys can have
+  //pointers to it. Note that, always the larger "larger" group will have the correspondence, for both sides. Not larger, but rather, the variable grp.
+  im.build_implementation( lm );
+  
   
   
   //lm.add_existing_model( "adex1->gAMPA1", "gSyn", "syn2-1" ); 
