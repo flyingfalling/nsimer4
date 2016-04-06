@@ -390,6 +390,10 @@ struct multi_generator
 
 
 
+
+
+
+
 //Once all things have been generated, we can actually do things.
 //I like the connections and index idea.
 
