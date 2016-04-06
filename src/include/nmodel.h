@@ -377,7 +377,17 @@ struct multi_generator
 //   can be generated although not much use. So, instead of CONN(X, Y), we can generate INDEX(X).
 
 
-//Ok...now implement it.
+
+// Syntactically, how do I want to reference the connection/interface between two models. Does the order matter? I assume it will have "both directions" of indices. Wait,
+// which am I generating though? I'm co-generating the connections on "this side" I guess... so it is ordered ME-HIM type thing. Wait, in that case I'm also generating
+// "me-him" for the presyn guys...heh. Which will be um, many-few. OK... Just always do it that way.
+//  CONN(me, him).
+// Specifically, name it grp->grp, or use a special symbol for it? Yea, / is for containment, -> is for connection.
+//The thing is, *what* do we add? We add specifically the INDEX!!! How do we specify the index of a group? All groups have an index variable, e.g. adex->index.
+
+
+//Let's build the full thing.
+
 
 
 //Once all things have been generated, we can actually do things.
