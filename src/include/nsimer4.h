@@ -404,6 +404,388 @@ struct hole
 //This will determine dependency structure.
 //Make it "runnable"
 
+
+
+
+
+//OK, so these are compiled into one-by-one executable things, which access vars etc.
+//Eventually those will compile into "true" code which reference elements in a "struct" that is just the real arrays/models
+//It will generate the code, and user will now have a struct/class that executes that "model". Will any changes in size require me to re-run it?
+//I guess it will generate it in a new class file? And it will have "impl" in other side of things, which is compiled with NVCC etc.
+//Ugh, it needs to "find" libraries etc.? So, this is a utility to "build" models.
+
+//I have a "class" which is what it builds ;)
+//The class has certain access methods. What it does, is it builds a certain "implementation" of it, which includes a function?
+//How about if I want to selectively turn on/off certain model updates? For example STDP? Figure out how to do that later (i.e. give tags in class to turn those parts off).
+//Order of updates should not matter...if I start a bunch of kernels in here, that's fine. So I need to separate into 2 kernels, "before" and "after", so that way we know one
+//is finished before next starts ;)
+
+//KERNEL
+//{
+// synupdate //these can all be simult
+// neurupdate // these can all be simult
+//}
+
+//dev synupdate { update each model related to syns }
+//Everything is based on whether something else "reads" from it before end of turn.
+
+//Anyway, figure all that later.
+//We have a "runcircuit" class, which we make an INSTANCE of via compiling. e.g. A "buildcircuit", which makes the vectors, runs the generators, etc.
+//Then, we have a "list" of update function (each model has its own update function thing). So, we have a "list" of compiled models? Model update functions specifically.
+//Which are local functions? Which reference their local variables? So we literally build a struct for each, with a list of guys, etc. Problem is sometimes they have
+//external references.
+
+//So, easiest to build a single large struct, with a global list of variables etc.
+//And it just has some number of functions, which are the member update functions. They are named/referenced by the updating group name in the symb model?
+//OK.
+
+
+//At any rate we alredy have the struct/class, which we know some functions of. And we make an instance of it, named like, mycircuit and shit. And the thing about it is that
+//we have the variables pushed back, and the symbolics pushed back, and somehow we have update functions, which get the pointer to the variable list and offsets in it...
+//So, they must be virtual functions...otherwise how do we "add" them? Or I overload it and "implement"? OK, fine, so we have many classes, and each one "implements" the
+//update function...which may be a bunch of device code ;)
+//Yea, so I guess it is just a single large update function for the whole circuit.
+//That's fine. update for N time points. With some "input" specified (by user).
+//Need to specify "input" or "events" during that period, and what to "read out". Then, user basically can use "that class", and use the "write" and "read" functions to get
+//stuff out of it ;)
+
+//So, this only builds the circuit, and generates it. But then I basically include in my model. Note, for a given symbolic model, the code is the same (?). Although it
+//may change the number of schedulers etc.? Nah...
+
+//So, I compile it once, it generates the GPU code...and then what? I can now use that as the "optimized" thing to run?
+//Yea, I basically generate an "optimized" implementation of "update" (for my specific OBJECT?), which is a function pointer. Can I only do one at a time? How do
+//I include it? Do I open it as a shared library? I basically say "generate the code to mymodel5.h" (note it will also generate CPP/CU files?)
+//No, it simply generates a "new" .cu file, which is then compiled INSTEAD of the old one. At "build" time, I now specify as command-line argument, the name of the "generated"
+//impl files to use. Which contain different implementations for "update" (of my specific class?). No, remember, it is a function POINTER. The function pointer takes the
+//class guy as arguments, and the ordering of the arrays to know what to operate on. Not only the update function is changed, it needs the list of pointers to its appropriate
+//data. So, now, I simply say std::function update = mycompiledfunct5;, rather than the default.
+//Yea, main problem is how to do that? Have all functions automatically registered (with arbitrary names) as some string. And user now basically just specifies at runtime,
+//the name of the one to use. They are all compiled and registered in a "compiled_functs" file? A .h file? Which is just arbitrarily generated names. Problem is they
+//must automatically register, which is impossible? No, I generate the header each time and generate the names? Ah, literally have a txt config file that is the "list" of
+//legal names, and I read it from there. So when I add one, I append to that list. If user deleted one, what happened? It won't compile because the implementation will have
+//been deleted. Note, I need to keep around a corresponding "model" name for each guy. I.e. generate a *new* cu/cpp file for each one? But keep them all available/registered.
+//So the actual runner only selects the blah, it doesn't generate the running. So I select model name, and select -optimized or -optimized-gpu. Then it will check to see if
+//it exists. If it does, it will get from that list.
+
+//That is just literally a list of functions to run (each one has optim, optim-gpu, and safety-model). The list is a list, of "model" name (like generated by user?),
+//and the actual code that implements the update function etc. Those are separately generated/compiled into separate header/cu files, which are stored in a different
+//special directory/directories to hold that.
+
+//The problem is that the makefile needs to automatically include/compile it all. It needs to know to now include those HEADER files (i.e. add them in a new "header-header"
+//list, fine). And it also needs to know to COMPILE the implementation files. It needs to know the rule for each of those. I guess my makefile can automatically handle that
+//it will compile them all, always? Assuming it is in the correct location. Fine.
+//If I delete the symbolic model (?), it will also delete the corresponding code? Do I always have a list of files to run?
+
+
+//Remember, I want to e.g. make a user program, with a MAIN, to build the thing.
+//So, my user program compiles, it already includes existing guys. I build the guy, I have the update function.
+//Then, I specify, run with optim. And it will go and exit temporarily (if it doesn't find an existing one for my model?), and say, generated code to XX.cu/XX.h, added
+//to <blah.headers>. So, re-compile, and re-run.
+
+//And now, it will exist in that store to search for. Fine, DO IT.
+
+
+//REV: No...it returns a DOUBLE? Always? And takes a list of doubles (no...strings?). Right...
+//Each inner guy, returns a double.
+//DOCMD( "SETVAR( GSYN, SUMFORALL( conductances, DIV( g, E ) ) )" );
+//g, E are variable references. They return "double" I guess (but call a funct)
+//So, problem is that SUMFORALL, it literally takes string and string as arguments.
+//So, all functions take a string of args, and parses it themselves. And all functions return doubles (?)
+
+
+//All functions do their own thing. Some functions take "string" and "blah" as arguments. That one happens to take 2 strings.
+//How about, all functions just take strings (the list of args)
+//I parse everything first, and determine where the arguments start/end.
+//Then I call from outside-in, left to right?
+//What exactly is a function? Literally a string. And I do the string, and it looks up the function name.
+//And that function, that function also will take some arguments in some way. So, it takes the string and parses it.
+//So, all functions return a double. All functions take a string.
+
+//REV: Parse a string into appropriate function form...
+//Include equals sign for "SET", and +, -, /, * with their normal meanings.
+
+
+typedef std::function< real_t( string&, symmodel& ) > cmd_functtype;
+
+
+bool checknumeric( const string& s, real_t& ret )
+{
+  bool ok=false;
+  std::istringstream iss( s );
+
+  iss >> ret;
+  //check that iss is all done! If it successfully parsed it, we good?
+  if( iss.fail() )
+    {
+      iss.clear();
+      string failedstring;
+      iss >> failedstring;
+
+      ok = false;
+    }
+  else
+    {
+      ok = true;
+    }
+
+  //Do I need to try to read "next" to read end of string? Will it return fail????
+  string wat;
+  iss >> wat;
+  if( !iss.eof() )
+    {
+      fprintf(stderr, "REV: error, checknumeric, didn't finish parse of input string to numeric [%s], read in unexpected [%s]?!?!?!?!\n", s.c_str(), wat.c_str());
+      exit(1);
+    }
+  
+
+  return ok;
+}
+
+real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  //most basic. Just does the search for it and executes. Returns a real_t, but really we need a "set"
+  vec<string>  parsed = doparse( arg );
+  if( parsed.size() != 1 )
+    {
+      exit(1);
+    }
+
+  vec<string> functparse = fparse( arg );
+  string fname = functparse[0];
+  functparse.erase( functparse.begin() );
+  vec<string> fargs = functparse;
+
+  //Lol, just re-parse them?
+  string newarg = CAT( fargs, "," );
+  
+  cmd_functtype execfunct;
+  bool found = cmds.findfunct( fname, execfunct );
+  real_t retval;
+  if( found )
+    {
+      retval = execfunct( newarg, model, cmds );
+    }
+  else
+    {
+      bool isnumer =  checknumeric( fname, retval );
+
+      if( isnumer == false )
+	{
+	  //It's a variable!!!! do READ (or set???)
+	}
+    }
+  
+  return retval;
+    
+}
+
+real_t READVAR( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg );
+  //Set some "var_counter" in model to be read.
+  if( parsed.size() != 1 )
+    {
+      exit(1);
+    }
+  real_t val = getvar( parsed[0] );
+  
+  return val;
+}
+
+
+//REV ERROR is parsed[0] is not a variable!!
+real_t SETVAR( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg );
+  if( parsed.size() != 2 )
+    {
+      exit(1);
+    }
+
+  string toexec = parsed[1];
+  real_t val = DOCMD( toexec, model, cmds );
+  //Could have been read and set separately?
+  setvar( parsed[0], val );
+
+  return 0;
+}
+
+
+//Easier to just make sure it's 2...
+real_t SUM( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg );
+  if( parsed.size() < 1 )
+    { exit(1); }
+
+  real_t val=0;
+  for( size_t tosum=0; tosum<parsed.size(); ++tosum)
+    {
+      string toexec = parsed[tosum];
+      val += DOCMD( toexec, model, cmds );
+    }
+
+  return val;
+}
+
+
+//product
+real_t MULT( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg );
+  if( parsed.size() < 1 )
+    { exit(1); }
+
+  real_t val=1.0;
+
+  for( size_t tosum=0; tosum<parsed.size(); ++tosum)
+    {
+      string toexec = parsed[tosum];
+      val *= DOCMD( toexec, model, cmds );
+    }
+
+  return val;
+}
+
+//div
+real_t DIV( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg );
+  if( parsed.size() < 1 )
+    { exit(1); }
+
+  string toexec = parsed[0];
+
+  real_t val=DOCMD( toexec, models, cmds );
+  
+  for( size_t tosum=1; tosum<parsed.size(); ++tosum)
+    {
+      toexec = parsed[tosum];
+      val /= DOCMD( toexec, model, cmds );
+    }
+
+  return val;
+}
+
+//subtract
+real_t DIFF( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  //subtract all from first one?
+  vec<string> parsed = doparse( arg );
+  if( parsed.size() < 1 )
+    { exit(1); }
+
+  string toexec = parsed[0];
+  real_t val=DOCMD( toexec, model, cmds );
+  for( size_t tosum=1; tosum<parsed.size(); ++tosum)
+    {
+      toexec = parsed[tosum];
+      val -= DOCMD( toexec, model, cmds );
+    }
+  
+  return val;
+}
+
+
+real_t NEGATE( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg );
+  if( parsed.size() != 1 )
+    { exit(1); }
+
+  string toexec = parsed[0];
+  real_t val= DOCMD( toexec, model, cmds );
+  return (-1.0 * val);
+}
+
+real_t EXP( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg );
+  if( parsed.size() != 1 )
+    { exit(1); }
+
+  string toexec = parsed[0];
+  real_t val = DOCMD( toexec, model, cmds );
+
+  return exp( val );
+}
+
+//How to deal with numerals? Just parse them as base vectors...
+real_t SUMFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg ); //For sumforall, it will only expect 2 arguments.
+
+  if(parsed.size() != 2 )
+    {
+      exit(1);
+    }
+  
+  vec<hole> myholes = gethole( parsed[0] );
+  
+  string toexec = parsed[1];
+  real_t val=0;
+  for( size_t h=0; h<myholes.size(); ++h)
+    {
+      symmodel m = myholes[h];
+      val += DOCMD( toexec, m, cmds ); //does DOCMD return a real_t val? Fuck...
+    }
+  return val;
+}
+
+//How to deal with numerals? Just parse them as base vectors...
+real_t MULTFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
+{
+  vec<string> parsed = doparse( arg ); //For sumforall, it will only expect 2 arguments.
+
+  if(parsed.size() != 2 )
+    {
+      exit(1);
+    }
+  
+  vec<hole> myholes = gethole( parsed[0] );
+  
+  string toexec = parsed[1];
+  real_t val=1.0;
+  for( size_t h=0; h<myholes.size(); ++h)
+    {
+      symmodel m = myholes[h];
+      val *= DOCMD( toexec, m, cmds ); //does DOCMD return a real_t val? Fuck...
+    }
+  return val;
+}
+
+struct cmdstore
+{
+  vec< string > functnames;
+  vec< cmd_functtype > functs;
+
+  //REV: if it doesnt find it, it is a variable or a number
+  bool  findfunct( const string& s, cmd_functtype& f )
+  {
+
+    vec<string>::iterator it = std::find( functnames.begin(), functnames.end(), s );
+    if( it != functnames.end() )
+      {
+	f = functs[ *it ];
+	return true;
+      }
+    else
+      {
+	return false;
+      }
+    
+  }
+  
+  //just a list of std::string NAME and std::function FUNCT, of same type?
+  //The type just takes list of guys. Eventually it takes raw (strings?) when they're not recognized. And does things with it. E.g. for conductances, it knows to
+  //look through "holes" for it. All functions take the model.
+};
+
+
+
+
+
+
 void adexupdate()
 {
   //Can I make a temporary variable? E.g. "forall" type thing?
@@ -420,6 +802,16 @@ void adexupdate()
   //and we keep "pushing" on it. For some, it might do some iteration over some shit. Note, when it encounters a "variable" (i.e. non-function), it just uses it (as a lookup)
   //OK...that will "work" but only in the sense that we want to bother writing another freaking parser for a language that looks up things to actually do. I can use it
   //to parse scripts though which is nice I guess?
+
+
+  //So, I need to handle that. For now just use the prefix, do the parsing later.
+  //For the generation side of things...?
+  //At any rate, at every "final reference" (stuff gets passed along with me? Fuck???), I need to reference that it was read/written...and that way I know ordering.
+  //Finally, I generate C++ to handle everything.
+  //Just use parens...and do it that way heh. In other words, list of strings. EZ.
+  DOCMD( "SETVAR( GSYN, SUMFORALL( conductances, DIV( g, E ) ) )" );
+  
+  //Major (final) question is fine, we generate the C++ as update function for this "group", 
   setvar( "gSyn", SUMFORALL( "conductances", DIV( var("g"), var("E") ) ) );
   setvar( "V", ADD( EXP( TIMES( var("W"), var("TAU1") ) ), var("gt"), var("V") ) ); //arbitrary number to add...?
   
