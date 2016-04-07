@@ -38,13 +38,16 @@ typedef double float64_t;
 
 typedef float64_t real_t;
 
-typedef std::vector vec;
+//typedef std::vector vec;
+
+using std::vector;
+
 typedef std::string string;
 
 
-vec<string> tokenize_string( const string& src, const str& delim, const bool& include_empty_repeats=false )
+vector<string> tokenize_string( const string& src, const string& delim, const bool& include_empty_repeats=false )
 {
-  vec<str> retval;
+  vector<string> retval;
   boost::char_separator<char> sep( delim.c_str() );
   boost::tokenizer<boost::char_separator<char>> tokens(src, sep);
   for(const auto& t : tokens)
@@ -78,7 +81,7 @@ std::string remove_prefix( const std::string& str, const std::string& prefix )
     }
 }
 
-vec<string> parse( const str& name)
+vector<string> parse( const str& name)
 {
   bool emptyrepeats=false;
   return tokenize_string( name, "/", emptyrepeats );
@@ -87,25 +90,25 @@ vec<string> parse( const str& name)
 
 struct SYMB_MODEL
 {
-  vec< str > vars;
+  vector< string > vars;
   
-  vec< str> holes;
+  vector< string > holes;
   
-  vec< SYMB_MODEL > models;
-  vec< str > localnames;
-  vec< str > localtypes;
+  vector< SYMB_MODEL > models;
+  vector< string > localnames;
+  vector< string > localtypes;
   
   //std::function update;
   
-  void var( const str& v ) { vars.push_back( v ); }
-  void hole( const str& h ) { holes.push_back( h ); }
+  void var( const string& v ) { vars.push_back( v ); }
+  void hole( const string& h ) { holes.push_back( h ); }
   
   
   //Only finds the first one...
-  vec< size_t > find_model( const str& name )
+  vector< size_t > find_model( const string& name )
   {
-    vec<size_t> ret;
-    vec<str>::iterator it = std::find( localnames.begin(), localnames.end(), name );
+    vector<size_t> ret;
+    vector<string>::iterator it = std::find( localnames.begin(), localnames.end(), name );
     if( it != localnames.end() )
       {
 	ret.push_back( *it );
@@ -115,11 +118,11 @@ struct SYMB_MODEL
   
   std::shared_ptr<SYMB_MODEL> get_model( const string& n )
   {
-    vec<string> parsed = parse( n );
+    vector<string> parsed = parse( n );
     return get_model( parsed );
   }
   
-  std::shared_ptr<SYMB_MODEL> get_model( const vec<string>& parsed )
+  std::shared_ptr<SYMB_MODEL> get_model( const vector<string>& parsed )
   {
     
     if( parsed.size() < 1 )
@@ -129,7 +132,7 @@ struct SYMB_MODEL
       }
     else //if ( parsed.size() >= 1 )
       {
-	vec<size_t> locs = find_model( parsed[0] );
+	vector<size_t> locs = find_model( parsed[0] );
 	if( locs.size() == 1 )
 	  {
 	    size_t mloc = locs[0];
@@ -155,7 +158,7 @@ struct SYMB_MODEL
   } //end get_model( vect<str> )
 
   
-  void add_model_part( const SYMB_MODEL& s, const str& localname, const str& localtype )
+  void add_model_part( const SYMB_MODEL& s, const string& localname, const string& localtype )
   {
     parts.push_back( s );
     localnames.push_back(localname);
@@ -194,20 +197,20 @@ struct SYMB_MODEL
 
 struct CIRCUIT_MODEL
 {
-  vec< str > modelnames;
-  vec< SYMB_MODEL > models;
+  vector< str > modelnames;
+  vector< SYMB_MODEL > models;
 
  
   
   //Ugh, using pointer? Not nice...retur
-  SYMB_MODEL& get_model( const str& name )
+  SYMB_MODEL& get_model( const string& name )
   {
     
   }
   
-  void add_model_part( const str& existingmodelname, const SYMB_MODEL& s, const str& localname, const str& localtype )
+  void add_model_part( const string& existingmodelname, const SYMB_MODEL& s, const string& localname, const string& localtype )
   {
-    vec< size_t > locs = find_model( existingmodelname );
+    vector< size_t > locs = find_model( existingmodelname );
     if( locs.size() == 1 )
       {
 	models[locs[0]].add_model_part( s, localname, localtype );
@@ -221,7 +224,7 @@ struct CIRCUIT_MODEL
 
   //REV: This is filling a "hole". does it matter external or internal?
   //REV: note this may be super nested somewhere...
-  void set_connection( const str& m1, const str& m2 )
+  void set_connection( const string& m1, const string& m2 )
   {
     //Parses var into model name, finds the model, then finds internal var...
     model1 = getmodel(m1);
@@ -351,6 +354,25 @@ struct symvar
   string name;
   string type;
   string valu; //Valu is (global reference) location of what it is.
+
+  size_t read=false;
+  size_t written=false;
+
+  void reset()
+  {
+    read=0;
+    written=0;
+  }
+
+  void readvar()
+  {
+    ++read;
+  }
+
+  void writevar()
+  {
+    ++written;
+  }
   
   //Default is "my location"
 symvar( const string& n )
@@ -368,7 +390,7 @@ struct hole
 {
   string name;
   //string type;
-  vec<string> members; //E.g. names (global) of models that have filled this hole?
+  vector<string> members; //E.g. names (global) of models that have filled this hole?
 
   hole( const string& n )
   : name(n)
@@ -549,16 +571,16 @@ bool checknumeric( const string& s, real_t& ret )
 real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
 {
   //most basic. Just does the search for it and executes. Returns a real_t, but really we need a "set"
-  vec<string>  parsed = doparse( arg );
+  vector<string>  parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     {
       exit(1);
     }
 
-  vec<string> functparse = fparse( arg );
+  vector<string> functparse = cmds.fparse( arg );
   string fname = functparse[0];
   functparse.erase( functparse.begin() );
-  vec<string> fargs = functparse;
+  vector<string> fargs = functparse;
 
   //Lol, just re-parse them?
   string newarg = CAT( fargs, "," );
@@ -572,27 +594,27 @@ real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
     }
   else
     {
-      bool isnumer =  checknumeric( fname, retval );
+      bool isnumer = checknumeric( fname, retval );
 
       if( isnumer == false )
 	{
-	  //It's a variable!!!! do READ (or set???)
+	  retval = READVAR( fname, model, cmds);
 	}
     }
   
   return retval;
-    
+  
 }
 
 real_t READVAR( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg );
+  vector<string> parsed = doparse( arg );
   //Set some "var_counter" in model to be read.
   if( parsed.size() != 1 )
     {
       exit(1);
     }
-  real_t val = getvar( parsed[0] );
+  real_t val = model.getvar( parsed[0] );
   
   return val;
 }
@@ -601,7 +623,7 @@ real_t READVAR( const string& arg, symmodel& model, const cmdstore& cmds )
 //REV ERROR is parsed[0] is not a variable!!
 real_t SETVAR( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 2 )
     {
       exit(1);
@@ -610,8 +632,8 @@ real_t SETVAR( const string& arg, symmodel& model, const cmdstore& cmds )
   string toexec = parsed[1];
   real_t val = DOCMD( toexec, model, cmds );
   //Could have been read and set separately?
-  setvar( parsed[0], val );
-
+  model.setvar( parsed[0], val );
+  
   return 0;
 }
 
@@ -619,10 +641,10 @@ real_t SETVAR( const string& arg, symmodel& model, const cmdstore& cmds )
 //Easier to just make sure it's 2...
 real_t SUM( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
     { exit(1); }
-
+  
   real_t val=0;
   for( size_t tosum=0; tosum<parsed.size(); ++tosum)
     {
@@ -637,7 +659,7 @@ real_t SUM( const string& arg, symmodel& model, const cmdstore& cmds )
 //product
 real_t MULT( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
     { exit(1); }
 
@@ -655,7 +677,7 @@ real_t MULT( const string& arg, symmodel& model, const cmdstore& cmds )
 //div
 real_t DIV( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
     { exit(1); }
 
@@ -676,7 +698,7 @@ real_t DIV( const string& arg, symmodel& model, const cmdstore& cmds )
 real_t DIFF( const string& arg, symmodel& model, const cmdstore& cmds )
 {
   //subtract all from first one?
-  vec<string> parsed = doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
     { exit(1); }
 
@@ -694,7 +716,7 @@ real_t DIFF( const string& arg, symmodel& model, const cmdstore& cmds )
 
 real_t NEGATE( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     { exit(1); }
 
@@ -705,7 +727,7 @@ real_t NEGATE( const string& arg, symmodel& model, const cmdstore& cmds )
 
 real_t EXP( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     { exit(1); }
 
@@ -718,14 +740,14 @@ real_t EXP( const string& arg, symmodel& model, const cmdstore& cmds )
 //How to deal with numerals? Just parse them as base vectors...
 real_t SUMFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg ); //For sumforall, it will only expect 2 arguments.
+  vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
 
   if(parsed.size() != 2 )
     {
       exit(1);
     }
   
-  vec<hole> myholes = gethole( parsed[0] );
+  vector<hole> myholes = model.gethole( parsed[0] );
   
   string toexec = parsed[1];
   real_t val=0;
@@ -740,14 +762,14 @@ real_t SUMFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
 //How to deal with numerals? Just parse them as base vectors...
 real_t MULTFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
 {
-  vec<string> parsed = doparse( arg ); //For sumforall, it will only expect 2 arguments.
+  vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
 
   if(parsed.size() != 2 )
     {
       exit(1);
     }
   
-  vec<hole> myholes = gethole( parsed[0] );
+  vector<hole> myholes = model.gethole( parsed[0] );
   
   string toexec = parsed[1];
   real_t val=1.0;
@@ -761,14 +783,14 @@ real_t MULTFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
 
 struct cmdstore
 {
-  vec< string > functnames;
-  vec< cmd_functtype > functs;
+  vector< string > functnames;
+  vector< cmd_functtype > functs;
 
   //REV: if it doesnt find it, it is a variable or a number
   bool  findfunct( const string& s, cmd_functtype& f )
   {
 
-    vec<string>::iterator it = std::find( functnames.begin(), functnames.end(), s );
+    vector<string>::iterator it = std::find( functnames.begin(), functnames.end(), s );
     if( it != functnames.end() )
       {
 	f = functs[ *it ];
@@ -784,13 +806,13 @@ struct cmdstore
 
   //Parses just by commas, but leaves matching parens (i.e. functions) intact.
   //This is just a literal parse of inside of funct? Is there any point in this? Just use the remnants from fparse...
-  vec<string> doparse( const string& s )
+  vector<string> doparse( const string& s )
   {
     //JUST RUN MY PARSER HERE, only first level parse.
     auto f( std::begin( s ));
     auto l( std::end( s ));
-    const static fparser::parser<decltype(f)> p;
-    vec<string> result;
+    const static fparser::doparser<decltype(f)> p;
+    vector<string> result;
     bool ok = fparser::qi::phrase_parse(f, l, p, fparser::qi::space, result );
     
     if(!ok)
@@ -807,13 +829,13 @@ struct cmdstore
   //If it has a legal function parse, I leave it alone?
   
   //parses function, i.e. expects only single FNAME( COMMA, ARGS )
-  vec<string> fparse( const string& s )
+  vector<string> fparse( const string& s )
   {
     //JUST RUN MY PARSER HERE, only first level parse.
     auto f( std::begin( s ));
     auto l( std::end( s ));
     const static fparser::parser<decltype(f)> p;
-    vec<string> result;
+    vector<string> result;
     bool ok = fparser::qi::phrase_parse(f, l, p, fparser::qi::space, result );
     
     if(!ok)
@@ -868,31 +890,34 @@ void adexupdate()
   
 }
 
+struct updatefunct_t
+{
+  vector<string> lines;
+
+  void add( const string& s )
+  {
+    lines.push_back( s );
+  }
+};
+
 struct symmodel
 {
-  //vec<string> updatefunct; //list of strings, which will be compiled?
-  std::function<void(void)> updatefunct;
-  //This is not "overloaded"? Ooohh it is overloaded? If I make them "derived" from symmodel, that is totally different of course...
-  
-  //user can only use "my" functions to do things, like add, multiply, exp, sin, etc.
-  //And of course, I choose how I implement it ;)
-  //So...I literally have strung together a list of update code...much better to just leave as C++ code...and let it compile it separately?
-  //But that will determine on lots of things?
-  //Symbolic models have only the equations to update for a SINGLE element...fine;
-  //Then, I vectorize it ;)
+  updatefunct_t updatefunct;
+
+  std::shared_ptr<symmodel> parent;
   
   string name;
-  vec<string> type;
+  vector<string> type;
   
-  vec<symvar> vars;
+  vector<symvar> vars;
     
-  vec<symmodel> models;
-  vec<string> modelnames;
-  vec<string> modeltypes;
+  vector<symmodel> models;
+  vector<string> modelnames;
+  vector<string> modeltypes;
 
-  vec<hole> holes;
-  //vec<string> holenames;
-  //vec<string> holetypes;
+  vector<hole> holes;
+  //vector<string> holenames;
+  //vector<string> holetypes;
 
 
   void addtype( const string& t )
@@ -928,6 +953,12 @@ symmodel( const string& s, const string& t )
   //We need to know when to update. If we only reference variables, we don't know when they've been updated. They must only be parameters?
   void addmodel( const symmodel& m, const string& localname, const string& localtype )
   {
+    //not a pointer, I assume? Pushes a COPY of it?
+    models.push_back( m );
+    modelnames.push_back( localname );
+    modeltypes.push_back( localtype );
+    models[ models.size() -1 ].parent = std::shared_ptr<symmodel>( this );
+    
     //Literally add a (new) submodel to me. This may also be used to fill a hole, but this model "owns" the data.
   }
 
@@ -936,7 +967,7 @@ symmodel( const string& s, const string& t )
     //Fill the hole with the model at modeltofillwith. Note that both hole and modeltofillwith may be HIERARCHY references *from that model*
     //Another problem is how to do "containing" models, i.e. I want to know who "contains" this gAMPA. I don't want to search all guys until I find this one.
     //I want to have a ".." pointer or smthing...
-    //All guys should h ave a "global" name, but then if it is added to another model, it may be still nested.
+    //All guys should have a "global" name, but then if it is added to another model, it may be still nested.
   }
 
   //Will this search all "holes" too?? Or only sub-models...? And only one layer down? This will look at "type" of model
@@ -945,6 +976,103 @@ symmodel( const string& s, const string& t )
     //Search models of target model, for those of TYPE, and fill hole.
   }
 
+  //From any point, can I always get a global reference? When I "add" to a model,
+  //I get the "parent" reference...always? Do I "always" need to be able to go up?
+  //Literally give a symptr to it?
+  
+  //music
+  //kyuss
+  //kylesa
+  //the sword
+  //sleep (dopesmoker)
+  //
+
+  std::shared_ptr<symmodel> get_containing_model( const string& n, string& varname )
+  {
+    vector<string> parsed = parse( n );
+    if( parsed.size() == 0 )
+      {
+	fprintf(stderr, "Error trying to get containing model for variable path [%s]\n", n.c_str() );
+	exit(1);
+      }
+    varname = parsed[ parsed.size()-1 ];
+    parsed.pop_back();
+
+    return get_model( parsed );
+  }
+  
+  
+  std::shared_ptr<symmodel> get_model( const string& n )
+  {
+    vector<string> parsed = parse( n );
+    return get_model( parsed );
+  }
+
+  //REV: This finds "variable" inside a model? Or it finds model?
+  std::shared_ptr<symmodel> get_model( const vector<string>& parsed )
+  {
+    if( parsed.size() == 0 ) //< 1 )
+      {
+	return std::shared_ptr< symmodel > ( this );
+      }
+    else //if ( parsed.size() >= 1 )
+      {
+	vector<size_t> locs = find_model( parsed[0] );
+	if( locs.size() == 1 )
+	  {
+	    size_t mloc = locs[0];
+	    
+	    //Strip off the first part.
+	    //parsed.erase( parsed.begin() );
+	    vector<string> nparsed( parsed.begin()+1, parsed.end() );
+	    return ( models[ mloc ].get_model( nparsed ) );
+	  }
+	else
+	  {
+	    fprintf(stderr, "REV: get_model, find model, model doesn't exist...[%s]\n", parsed[0].c_str());
+	    exit(1);
+	  }
+      }
+  } //end get_model( vect<str> )
+  
+    
+
+  size_t get_varloc( const string& s )
+  {
+    for(size_t x=0; x<vars.size(); ++x)
+      {
+	if( s.compare( vars[x].name ) == 0 )
+	  {
+	    return x;
+	  }
+      }
+
+    fprintf(stderr, "REV: ERROR variable [%s] could not be found in this model [%s]\n", s.c_str(), name.c_str() );
+    exit(1);
+  }
+  
+  symvar& getvar( const string& s )
+  {
+    //std::vector<string> parsed = parse( s );
+    string varname;
+    std::shared_ptr<symmodel> containingmodel = get_containing_model( s, varname );
+    size_t loc = containingmodel->get_varloc( varname );
+    return vars[ loc ];
+  }
+
+  symvar& readvar( const string& s )
+  {
+    getvar( s ).readvar();
+    return getvar(s);
+  }
+
+  void setvar( const string& s, const real_t& v )
+  {
+    getvar( s ).writevar();
+    return;
+  }
+
+  
 
   
 };
