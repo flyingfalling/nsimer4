@@ -251,8 +251,25 @@ struct symmodel
 symmodel( const string& s, const string& t )
   : name( s), type( parsetypes( t ) )
   {
-    updatefunct = updatefunct_t( shared_from_this() );
+    //updatefunct = updatefunct_t( shared_from_this() );
     addtypes( t );
+  }
+
+  void set_updatefunct( const updatefunct_t& uf )
+  {
+    updatefunct = uf; //copy
+    updatefunct.model = shared_from_this();
+  }
+  
+  void add_line_to_updatefunct( const string& s )
+  {
+    //If my updatefunct is still null
+    if( !updatefunct.model )
+      {
+	updatefunct.model = shared_from_this();
+      }
+    
+    updatefunct.add(s);
   }
   
   void addvar( const string& s, const string& t )
