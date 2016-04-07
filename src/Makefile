@@ -28,6 +28,6 @@ testsymmodel:  $(objs) $(headers) Makefile
 
 # $(RM) is rm -f by default
 clean:
-	$(RM) $(objs) $(deps) test
+	$(RM) $(objs) $(deps) *.exe
 
 -include $(deps)
