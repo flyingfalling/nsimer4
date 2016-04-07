@@ -783,102 +783,26 @@ struct cmdstore
 
 
   //Parses just by commas, but leaves matching parens (i.e. functions) intact.
+  //This is just a literal parse of inside of funct? Is there any point in this? Just use the remnants from fparse...
   vec<string> doparse( const string& s )
   {
+    //JUST RUN MY PARSER HERE, only first level parse.
+    auto f( std::begin( s ));
+    auto l( std::end( s ));
+    const static fparser::parser<decltype(f)> p;
+    vec<string> result;
+    bool ok = fparser::qi::phrase_parse(f, l, p, fparser::qi::space, result );
+    
+    if(!ok)
+      {
+	fprintf(stderr, "REV: fparse: invalid input!!! [%s]\n", s.c_str());
+	exit(1);
+      }
+    
+    return result;
     
   }
 
-
-  namespace fparser
-  {
-    struct parser
-    {
-      inline parser();
-
-      //REV: is second arg what it takes, or what it returns?
-      qi::rule< It, vec<string>, qi::space_type > vecform;
-      qi::rule< It, string, qi::space_type > stringform;
-      qi::rule< It, string, qi::space_type > fname;
-      
-    };
-
-
-    //REV: impl of parser constructor
-    template <typename It, typename Skipper>
-      parser<It,Skipper>::parser()
-      : parser::base_type(vecform)
-      {
-	 using qi::lit;
-	 using qi::lexeme;
-	 using qi::raw;
-	 using ascii::char_;
-	 using ascii::string;
-	 using namespace qi::labels;
-	 
-	 using phoenix::at_c;
-	 using phoenix::push_back;
-
-
-	 //only the first level parses. So basically, it parses one or more things separated by ","
-	 //However, after that, everything is a "chunk". Problem is it will include nested functions' commas.
-	 //So, only parse "stringform" separated by commas.
-	 //A "stringform" can be any number of things
-	 //However, it just returns it as a string.
-	 //It includes specifically
-
-	 
-	 //Does the star work here? Can I have just a literal for the vect form? What will it parse if there is nothing? It will infinitely parse?
-	  vecform = (
-		     fname [push_back(ref(_val), _1)]  
-		     >>
-		     *(
-		       '('
-		       >>
-		       stringform [push_back( ref(_val), _1) ]
-		       >>
-		       *( ',' >> stringform [push_back( ref(_val), _1) ] )
-		       >>
-		       ')'
-		       )
-		     );
-	  
-
-	  //Same as vect, but it just makes a single string.
-	  //Need to specify to return it e.g. lexeme[ ]
-	  //Easier to parse it and turn it into a single string, but how to do that?
-	  //I could do it with nested parse lol...
-	  stringform = (
-			fname
-			>>
-			*(
-			  '('
-			  >>
-			  stringform
-			  >>
-			  *(
-			    ','
-			    >>
-			    stringform
-			    )
-			  >>
-			  ')'
-			  )
-			
-			);
-
-
-	  //Read until (, or if no (, then just read and exit...
-	  //Am I required to have parens? I guess I can have "optinal" parens ;0
-	  //How do I tell it to go "until it ends"?
-	  fname = (
-		   lexeme[+(char_ - '(' - ')' - ',')]
-		   );
-
-	  //A stringform simply returns itself. It only reads up until ) basically (if it had an opener)
-	  
-      } //end implementation of parser CONSTRUCTOR
-    
-  } // end fparser namespace
   
   //If it has a legal function parse, I leave it alone?
   
@@ -891,41 +815,14 @@ struct cmdstore
     const static fparser::parser<decltype(f)> p;
     vec<string> result;
     bool ok = fparser::qi::phrase_parse(f, l, p, fparser::qi::space, result );
-
+    
     if(!ok)
       {
 	fprintf(stderr, "REV: fparse: invalid input!!! [%s]\n", s.c_str());
 	exit(1);
       }
-
+    
     return result;
-    
-    //first, splits by "(". ( always marks START of a function thing.
-    //Empty repeats implies something paren delimited. Shouldn't matter unless I do e.g. (( g+s ) + c );
-
-    /*bool emptyrepeats = true;
-    vec<string> openparensplit = tokenize( s, "(", emptyrepeats );
-    string fname = openparensplit[0];
-
-    //If 1, error????
-    
-    //Now, from 1 to end, I need to "consume" everything in between.
-    //If I parse a split with ), and it ends up with more than 1 piece, then I need to recursively call? The first part will be "before" the parens. So, that is the
-    //contents of the "most recent" function?
-    vec<string> pieces;
-    pieces.push_back(fname);
-    
-    string tmp="";
-    for(size_t x=1; x<openparensplit.size(); ++x)
-      {
-	string tmpstr = openparensplit[x];
-	vec<string> closesplit = tokenize( tmpstr, ")", emptyrepeats );
-	//e.g. might be F1( A, F2( F3( ), X ) )
-	//So, this is "A, F2"
-	//Check that it is only of size 1?
-	tmp += closesplit[0];
-      }
-    */
     
   }
   
