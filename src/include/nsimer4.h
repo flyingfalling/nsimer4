@@ -91,8 +91,11 @@ struct symvar
 {
   string name;
   string type;
-  string valu; //Valu is (global reference) location of what it is.
+  //string valu; //Valu is (global reference) location of what it is.
+  //Wait, can't vars be size_t also?
 
+  real_t valu;
+  
   size_t read=false;
   size_t written=false;
 
@@ -219,7 +222,7 @@ real_t READVAR( const string& arg, symmodel& model, const cmdstore& cmds )
     {
       exit(1);
     }
-  real_t val = model.getvar( parsed[0] );
+  real_t val = model.getvar( parsed[0] ).valu;
   
   return val;
 }
@@ -638,10 +641,37 @@ symmodel( const string& s, const string& t )
     return;
   }
 
+  void prefixprint( size_t depth=0 )
+  {
+    for(size_t d=0; d<depth; ++d)
+      {
+	fprintf(stdout, "-");
+      }
+  }
   
+  //Enumerates all (at a global scope) variables, and recursively does it for all my sub-models
+  //All holes which are filled by models, have their global scope printed too.
+  void enumerate( size_t depth = 0 )
+  {
+    prefixprint( depth );
+    fprintf( stdout, "MODEL [%s]\n", name.c_str() );
 
+    prefixprint( depth );
+    fprintf( stdout, "TYPES: ");
+    for(size_t t=0; t<types.size(); ++t)
+      {
+	fprintf(stdout, "[%s] ", types[t] );
+      }
+    fprintf(stdout, "\n");
+
+    prefixprint( depth );
+    //Need to know which variables are referenced in my update function!!!!! So I know that I can actually find them and that they exist in the target models!!!!
+    //Variables "read" in update function
+    //Variables "written" in update function
+    //Verified location. Since I only reference "foreign models", I need to know which ones I will actually read/write and ensure they exist ;)
+  }
   
-};
+}; //end STRUCT SYMMODEL
 
 
 symmodel pos3d("pos3d", "3dposition|location|um" );
@@ -788,6 +818,58 @@ sc.fillhole( "adex1/presyn", "syn1-1" );
 sc.fillhole( "adex1/presyn", "syn2-1" );
 
 
+
+
+
+//REV: OK, I think all boilerplate is in place.
+//Now, I need to, for every update function, check whether it is read/written in the same update function?
+//So, this way I know "which" model update functions update/read which variables?
+
+//The purpose of this, in the end, is so that I can appropriately generate "dummy" variables, and know where/when to reference guys.
+
+//Each "update" function will have a list of variables
+
+//What do I want to do? I need to make temp variables now.
+//Right now, it goes through and does the stuff. Whatever, I can figure that out later. For now, just run it in "slow" mode.
+
+//In some cases, E.g. if V references V this turn, we need two V. We can refer to them individually? No. But we may need to reference new V and old V.
+//Obviously, user explicitly references it? Only case I can think it matters is if e.g. W reads from new or old. Does it ever matter?
+//If we want things to update in parallel, e.g. we want V to update based on V(t-1), and then new V becomes V(t-1) at end of turn...
+//From the point of view of all models, it is V(t-1) until the turn ends.
+//This is important, because in case of e.g. re-computing spike time, we need to reference the "new" V. If it is referenced in the SAME function, then it always references the
+//new one? Or, give user a syntax to access the old one (e.g. V(t-1) or something?). How about special syntax like V[t-1] versus V[t], etc. In which case multiple copies are made.
+//By default "read" references are made to V[t-1], and "write" are made to V[t]. However, user can sometimes explicitly reference to read from a write (V[t]) value.
+//If I read from the same variable after writing to it, that is an indication that something has happened. But a lot of things do that...? If any other models read from
+//me, that is a problem? That means that e.g. they want to read from my old value? Or, it "doesn't matter"? If I specifically state to read from the old value,
+//that means that MY MODEL needs to update first. However, if it references my V[t-1], and I reference its X[t-1], there is a conflict. In that case, one of them must
+//create a dummy "temp var" which is referenced, and it updates into the new V[t] variable (i.e. writes into it), and then at end of turn, V[t] is copied to V[t-1].
+
+//For example, within myself, if I reference V[t-1], for setting V[t] (of a different neuron!!??!???). How can I check whether it is of a different neuron?
+//Anything that goes through a CONNECTION (that is non-unity) does this.
+//If it is self...then what? If it is a V, it goes through a connection? Anything through a connection will use V[t-1] to ensure all update is synchronous.
+//Just, everything has previous values...but we only explicilty reference updated/non-updated. Fine.
+//SO, then, why do we care about being read/written to?
+
+//Just check that I can read/write all variables.
+
+//What is diff btween param and variable? None?
+
+//If there is a conflict, it will keep two around.
+
+//Oh shit, I need to implement spike schedulers... and DT type things...
+
+//At any rate, do all updates now ;)
+
+
+
+//What can I build/check? Make all the update functions? How about "connections"? Assume they are constructed automatically (based on size?) Yea.
+
+//What the fuck do I compile into? Some structure which has explicit connections between all variable references? Between all models?
+//In some cases I explicitly generate connections.
+
+
+//So, right now I theoretically have everything connected (symbolically). So, I can theoretically draw it out from a global point of view, the whole
+//circuit.
 
 
 
