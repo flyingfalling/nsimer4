@@ -24,17 +24,8 @@ struct cmdstore;
 typedef std::function< real_t( const string&, std::shared_ptr<symmodel>&, const cmdstore& ) > cmd_functtype;
 
 
-vector<string> parse( const string& name)
-{
-  bool emptyrepeats=false;
-  return tokenize_string( name, "/", emptyrepeats );
-}
-
-vector<string> parsetypes( const string& name)
-{
-  bool emptyrepeats=false;
-  return tokenize_string( name, "|", emptyrepeats );
-}
+vector<string> parse( const string& name);
+vector<string> parsetypes( const string& name);
 
 
 struct symvar

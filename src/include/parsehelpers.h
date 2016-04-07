@@ -11,6 +11,8 @@
 #include <string>
 
 
+using std::string;
+using std::vector;
 
 vector<string> tokenize_string( const string& src, const string& delim, const bool& include_empty_repeats=false );
 

@@ -3,6 +3,18 @@
 
 #include <symmodel.h>
 
+vector<string> parse( const string& name)
+{
+  bool emptyrepeats=false;
+  return tokenize_string( name, "/", emptyrepeats );
+}
+
+vector<string> parsetypes( const string& name)
+{
+  bool emptyrepeats=false;
+  return tokenize_string( name, "|", emptyrepeats );
+}
+
 
 real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
@@ -267,3 +279,7 @@ cmdstore::cmdstore()
     ADDFUNCT( SUMFORALL );
     ADDFUNCT( MULTFORALL );
   }
+
+
+
+

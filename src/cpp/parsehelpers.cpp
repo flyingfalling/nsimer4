@@ -1,6 +1,6 @@
 #include <parsehelpers.h>
 
-vector<string> tokenize_string( const string& src, const string& delim, const bool& include_empty_repeats=false )
+vector<string> tokenize_string( const string& src, const string& delim, const bool& include_empty_repeats )
 {
   vector<string> retval;
   boost::char_separator<char> sep( delim.c_str() );
