@@ -6,6 +6,14 @@
 
 
 
+//--MUZIKS
+//kyuss
+//kylesa
+//the sword
+//sleep (dopesmoker)
+
+
+
 //REV: redesign!!
 
 //everything is a SYMB model. And we "search" for symb-model references recursively to find the one referred to at the lowest level. Is the last element always a variable?
@@ -87,6 +95,12 @@ vector<string> parse( const str& name)
   return tokenize_string( name, "/", emptyrepeats );
 }
 
+vector<string> parsetypes( const str& name)
+{
+  bool emptyrepeats=false;
+  return tokenize_string( name, "|", emptyrepeats );
+}
+
 struct symvar
 {
   string name;
@@ -131,11 +145,17 @@ struct hole
 {
   string name;
   //string type;
-  vector<string> members; //E.g. names (global) of models that have filled this hole?
+  //vector<string> members; //E.g. names (global) of models that have filled this hole?
+  vector< std::shared_ptr<symmodel> > members;
 
   hole( const string& n )
   : name(n)
   {
+  }
+
+  void add( const std::shared_ptr<symmodel>& h )
+  {
+    members.push_back(h);
   }
 };
 
@@ -176,6 +196,15 @@ bool checknumeric( const string& s, real_t& ret )
   return ok;
 }
 
+
+//REV: This is all fine, we call directly from this model. Problem is we pass
+//model& as the argument, and e.g. it tries to access variable from a HOLE.
+//In that case, what do I do? The hole has a pointer to the "real" model.
+//That is fine.
+//What if my model references a variable of a submodel?
+//Variable "read" returns what, a string? A real_t?
+//Need to make sure it correctly recursively reads through submodels to find the VAR
+//DIRECTDLY
 real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
 {
   //most basic. Just does the search for it and executes. Returns a real_t, but really we need a "set"
@@ -184,7 +213,7 @@ real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
     {
       exit(1);
     }
-
+  
   vector<string> functparse = cmds.fparse( arg );
   string fname = functparse[0];
   functparse.erase( functparse.begin() );
@@ -211,7 +240,6 @@ real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
     }
   
   return retval;
-  
 }
 
 real_t READVAR( const string& arg, symmodel& model, const cmdstore& cmds )
@@ -361,7 +389,7 @@ real_t SUMFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
   real_t val=0;
   for( size_t h=0; h<myholes.size(); ++h)
     {
-      symmodel m = myholes[h];
+      symmodel m = *myholes[h];
       val += DOCMD( toexec, m, cmds ); //does DOCMD return a real_t val? Fuck...
     }
   return val;
@@ -383,7 +411,7 @@ real_t MULTFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
   real_t val=1.0;
   for( size_t h=0; h<myholes.size(); ++h)
     {
-      symmodel m = myholes[h];
+      symmodel m = *myholes[h];
       val *= DOCMD( toexec, m, cmds ); //does DOCMD return a real_t val? Fuck...
     }
   return val;
@@ -393,6 +421,28 @@ struct cmdstore
 {
   vector< string > functnames;
   vector< cmd_functtype > functs;
+
+  //static...?
+  cmdstore()
+  {
+    add( #DOCMD, DOCMD );
+    add( #READVAR, READVAR );
+    add( #SETVAR, SETVAR );
+    add( #SUM, SUM );
+    add( #MULT, MULT );
+    add( #DIV, DIV );
+    add( #DIFF, DIFF );
+    add( #NEGATE, NEGATE );
+    add( #SUMFORALL, SUMFORALL );
+    add( #MULTFORALL, MULTFORALL );
+  }
+
+  void add( const string& s, cmd_functtype f )
+  {
+    functnames.push_back(s);
+    functs.push_back(f);
+  }
+  
 
   //REV: if it doesnt find it, it is a variable or a number
   bool  findfunct( const string& s, cmd_functtype& f )
@@ -462,10 +512,30 @@ struct cmdstore
 struct updatefunct_t
 {
   vector<string> lines;
+  cmdstore cmds;
+  std::shared_ptr<symmodel> model;
 
+  updatefunct_t( std::shared_ptr<symmodel>& m )
+  : model( m )
+  {
+  }
+
+  //dummy (nothing)
+  updatefunct_t()
+  {
+  }
+  
   void add( const string& s )
   {
     lines.push_back( s );
+  }
+
+  void execute()
+  {
+    for(size_t c=0; c<lines.size(); ++c)
+      {
+	DOCMD( lines[c], model, cmds );
+      }
   }
 };
 
@@ -499,7 +569,8 @@ struct symmodel
 symmodel( const string& s, const string& t )
 : name( s), type( t )
   {
-    //parse t into types, and push back to type.
+    updatefunct = updatefunct_t( this );
+    addtypes( t );
   }
   
   void addvar( const string& s, const string& t )
@@ -512,6 +583,16 @@ symmodel( const string& s, const string& t )
     holes.push_back( hole(s) );
   }
 
+  void addtypes( const string& t )
+  {
+    vector<string> parsed = parsetypes( t );
+    for(size_t p=0; p<parsed.size(); ++p)
+      {
+	type.push_back( paresed[p] );
+      }
+      
+  }
+  
   //Is this filling a hole? E.g. with an external model?
   //At what point do I actually "resolve" all variables/models?
   //Can adding models actually be external? No, they can't. Those must be holes? No, they can be external? If they're connected?
@@ -531,30 +612,179 @@ symmodel( const string& s, const string& t )
     //Literally add a (new) submodel to me. This may also be used to fill a hole, but this model "owns" the data.
   }
 
-  void fillhole( const string& hole, const string& modeltofillwith )
+  vector<hole> gethole( const string& h )
   {
-    //Fill the hole with the model at modeltofillwith. Note that both hole and modeltofillwith may be HIERARCHY references *from that model*
-    //Another problem is how to do "containing" models, i.e. I want to know who "contains" this gAMPA. I don't want to search all guys until I find this one.
-    //I want to have a ".." pointer or smthing...
-    //All guys should have a "global" name, but then if it is added to another model, it may be still nested.
+    //needs to recursively find the hole?
+    vector<size_t> holeidx = find_hole( h );
+    if(holeidx.size() == 1)
+      {
+	return holes[ holeidx[0] ];
+      }
+    else
+      {
+	fprintf(stderr, "REV: ERROR in gethole [%s], no such hole exists in model [%s]\n", h.c_str(), buildpath().c_str() );
+	exit(1);
+      }
+  }
+  
+  vector<size_t> find_hole( const string& h )
+  {
+    vector<size_t> r;
+    for(size_t n=0; n<holes.size(); ++n )
+      {
+	if( holes[n].name.compare( h ) == 0 )
+	  {
+	    r.push_back(n);
+	  }
+      }
+    return r;
   }
 
-  //Will this search all "holes" too?? Or only sub-models...? And only one layer down? This will look at "type" of model
-  void fillhole_fromtype( const string& hole, const string& modeltofillfrom, const string& type )
+  vector<size_t> find_model( const string& h )
   {
+    vector<size_t> r;
+    for(size_t n=0; n<models.size(); ++n )
+      {
+	if( models[n].name.compare( h ) == 0 )
+	  {
+	    r.push_back(n);
+	  }
+      }
+    return r;
+  }
+
+  //REV; this could get nasty because I don't know "where" I am referencing it from?
+  //Assume it always goes up to "maximum"fd location, i.e. root of all models
+  //referenced? Root I'm filling it from...? I.e. raises parents until it is zero,
+  //comparing at each point, and then BAM. For now it's just a string, since the
+  //target model might not be added yet (hm?). Do I always need to make sure it has
+  //been added already so that I can resolve it? That seems much safer...
+  //In other words, I literally just get "pointers" to models at this point in
+  //time. Much safer ;) But the way it finds the pointer is it is resolved at this
+  //point in time.
+
+  void fillhole( const string& hole, const std::shared_ptr<symmodel>& modeltofillwith )
+  {
+    vector<string> parsed = parse( hole );
+    fillhole( parsed, modeltofillwith );
+  }
+  
+
+  vector<size_t> findmodel( const string& m )
+  {
+    for(size
+  }
+  
+  void fillhole( const vector<string>& hole, const std::shared_ptr<symmodel>& modeltofillwith )
+  {
+    vector<string> parsed = hole;
+    if( parsed.size() == 0 )
+      {
+	fprintf(stderr, "ERROR in fillhole [%s], hole doesn't exist?\n", hole.c_str());
+      }
+    else if( parsed.size() == 1 )
+      {
+	vector<size_t> holeidxs = find_hole( hole );
+	if(holeidxs.size() == 1 )
+	  {
+	    size_t holeidx = holeidxs[0];
+	    //fill it
+	    holes[ holeidx ].add( modeltofillwith );
+	  }
+	else
+	  {
+	    fprintf(stderr, "ERROR in fill hole, hole [%s] doesn't exist\n", hole.c_str());
+	    exit(1);
+	  }
+      }
+    else
+      {
+	string submodel = parsed[0];
+	vector<size_t> locs = find_model( submodel );
+
+	if(locs.size() == 1)
+	  {
+	    size_t mloc = locs[0];
+	    parsed.erase( parsed.begin() );
+	    
+	    models[ mloc ].fillhole( parsed, modeltofillwith );
+	  }
+	else
+	  {
+	    fprintf(stderr, "ERROR in fillhole, submodel of current model doesn't exist [%s]\n", submodel.c_str() );
+	    exit(1);
+	  }
+      }
+  } //end fillhole
+  
+  //OK, so it tries to resolve it now within the circuit. This is good. If we just
+  //fed a "free" local model, it wouldn't know to try to e.g. push it back or whatever.
+  void fillhole( const string& hole, const string& modeltofillwith )
+  {
+
+    std::shared_ptr<symmodel> model = get_model( modeltofillwith );
+
+    fillhole( hole, model );
+    
+  }
+
+  //check if model of type, is CONJUNCTION of all types
+  bool model_is_of_type( const string& t )
+  {
+    
+    vector<string> types = parsetype( t );
+    for(size_t x=0; x<types.size(); ++x)
+      {
+	bool found=false;
+	for(size_t modt=0; modt<type.size(); ++modt)
+	  {
+	    if( type[modt].compare( types[x] ) == 0 )
+	      {
+		found=true;
+	      }
+	  }
+	if( !found ) //found at least one type that I am not.
+	  {
+	    return false;
+	  }
+      }
+    return true;
+  }
+  
+  vector< std::shared_ptr<symmodel> > find_models_of_type( const string& t )
+    {
+      vector< std::shared_ptr<symmodel> > ret;
+      for(size_t m=0; m<models.size(); ++m)
+	{
+	  //checks localtype? Or actual model type?
+	  if( models[m].model_is_of_type( t ) == true )
+	    {
+	      ret.push_back( std::shared_ptr<symmodel>( &models[m] ) );
+	    }
+	}
+      return ret;
+    }
+  
+  
+  //Will this search all "holes" too?? Or only sub-models...? And only one layer down? This will look at "type" of model
+  void fillhole_fromtype( const string& hole, const string& modeltofillfrom, const string& t )
+  {
+    //Does same thing, but fills it with all models of a given type
+    //does so by iterating through all models (not all holes!) and filling from type.
+
+    std::shared_ptr<symmodel> model = get_model( modeltofillfrom );
+    
+    vector< std::shared_ptr<symmodel> > modelsoftype = model->find_models_of_type( t );
+
+    for( size_t m=0; m<modelsoftype.size(); ++m )
+      {
+	fillhole( hole, modelsoftype[m] );
+      }
+    
     //Search models of target model, for those of TYPE, and fill hole.
   }
 
-  //From any point, can I always get a global reference? When I "add" to a model,
-  //I get the "parent" reference...always? Do I "always" need to be able to go up?
-  //Literally give a symptr to it?
   
-  //music
-  //kyuss
-  //kylesa
-  //the sword
-  //sleep (dopesmoker)
-  //
 
   std::shared_ptr<symmodel> get_containing_model( const string& n, string& varname )
   {
@@ -586,7 +816,8 @@ symmodel( const string& s, const string& t )
       }
     else //if ( parsed.size() >= 1 )
       {
-	vector<size_t> locs = find_model( parsed[0] );
+	string submodel = parsed[0];
+	vector<size_t> locs = find_model( submodel );
 	if( locs.size() == 1 )
 	  {
 	    size_t mloc = locs[0];
@@ -648,27 +879,87 @@ symmodel( const string& s, const string& t )
 	fprintf(stdout, "-");
       }
   }
-  
+
+  //Checks all variables referenced in update function, and ensures they exist (and gives location they exist at)
+  //ONLY UPDATES MINE, DOES NOT RECURSE.
+  void check_update_funct()
+  {
+    //literally runs it and tries to read each variable ;)
+    //If it can't find it, it exits...
+    updatefunct.execute();
+  }
+
+  string buildpath( )
+  {
+    vector<string> path;
+    path.push_back( name );
+    
+    std::shared_ptr<symmodel> model = parent;
+    while( model )
+      {
+	path.push_back( model->name );
+	model = model->parent;
+      }
+
+    string finalpath="";
+    for(size_t c=path.size()-1 ; ( c>=0 && c<path.size() ) ; --c)
+      {
+	finalpath = finalpath + "/" + path[c];
+      }
+
+    return finalpath;
+  }
+
+
+  //Need to know which variables are referenced in my update function!!!!! So I know that I can actually find them and that they exist in the target models!!!!
+  //Variables "read" in update function
+  //Variables "written" in update function
+  //Verified location. Since I only reference "foreign models", I need to know which ones I will actually read/write and ensure they exist ;)
+
   //Enumerates all (at a global scope) variables, and recursively does it for all my sub-models
   //All holes which are filled by models, have their global scope printed too.
-  void enumerate( size_t depth = 0 )
+  void check_and_enumerate( size_t depth = 0 )
   {
     prefixprint( depth );
     fprintf( stdout, "MODEL [%s]\n", name.c_str() );
 
     prefixprint( depth );
     fprintf( stdout, "TYPES: ");
-    for(size_t t=0; t<types.size(); ++t)
+    for(size_t t=0; t<type.size(); ++t)
       {
-	fprintf(stdout, "[%s] ", types[t] );
+	fprintf(stdout, "[%s]", type[t] );
       }
     fprintf(stdout, "\n");
 
     prefixprint( depth );
-    //Need to know which variables are referenced in my update function!!!!! So I know that I can actually find them and that they exist in the target models!!!!
-    //Variables "read" in update function
-    //Variables "written" in update function
-    //Verified location. Since I only reference "foreign models", I need to know which ones I will actually read/write and ensure they exist ;)
+    //Print HOLES and their filled models?
+    //Print "path" to highest parent of every model by tracing parent until NULL?
+    fprintf(stdout, "HOLES:");
+    for(size_t h=0; h<holes.size(); ++h)
+      {
+	prefixprint( depth );
+	fprintf(stdout, " [%s], filled by [%lu] members\n", holes[h].name.c_str(), holes[h].members.size() );
+
+	for(size_t m=0; m<holes[h].members.size(); ++m)
+	  {
+	    prefixprint( depth );
+	    fprintf(stdout, "  [%lu]: [%s]\n", holes[h].members[m]->buildpath().c_str() );
+	  }
+      }
+
+    prefixprint( depth );
+    fprintf(stdout, "++checking update function for variable reference resolution\n");
+    check_update_funct();
+    
+    prefixprint( depth );
+    fprintf(stdout, "SUBMODELS:\n");
+    prefixprint( depth );
+    for(size_t subm=0; subm<models.size(); ++subm)
+      {
+	models[subm].check_and_enumerate( depth+1 );
+      }
+    
+
   }
   
 }; //end STRUCT SYMMODEL
