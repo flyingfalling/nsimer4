@@ -39,19 +39,19 @@
 #include <cstdio>
 
 #include <algorithm>
+#include <memory>
+
+#include <stringstream> //sstream?
 
 #include <boost/tokenizer.hpp>
 
 typedef double float64_t;
-
 typedef float64_t real_t;
 
-//typedef std::vector vec;
-
 using std::vector;
+using std::string;
 
-typedef std::string string;
-
+typedef std::function< real_t( string&, std::shared_ptr<symmodel>& ) > cmd_functtype;
 
 vector<string> tokenize_string( const string& src, const string& delim, const bool& include_empty_repeats=false )
 {
@@ -105,14 +105,14 @@ struct symvar
 {
   string name;
   string type;
-  //string valu; //Valu is (global reference) location of what it is.
-  //Wait, can't vars be size_t also?
-
+  
   real_t valu;
   
   size_t read=false;
   size_t written=false;
 
+  std::shared_ptr<symmodel> parent;
+  
   void reset()
   {
     read=0;
@@ -130,45 +130,59 @@ struct symvar
   }
   
   //Default is "my location"
-symvar( const string& n )
-: name(n)
+symvar( const string& n, const std::shared_ptr<symmodel>& p )
+: name(n), parent(p)
   {
   }
+  
+symvar( const string& n, const string& t, const std::shared_ptr<symmodel>& p  )
+: name(n), type(t), parent(p)
+  {
+  }
+}; //end struct symvar
 
-symvar( const string& n, const string& t )
-: name(n), type(t)
-  {
-  }
-};
 
 struct hole
 {
   string name;
+  std::shared_ptr<symmodel> parent;
   //string type;
   //vector<string> members; //E.g. names (global) of models that have filled this hole?
   vector< std::shared_ptr<symmodel> > members;
-
-  hole( const string& n )
-  : name(n)
+  vector< bool > external;
+  //Have pointer to connection struct?
+  
+hole( const string& n, const std::shared_ptr<symmodel>& p )
+: name(n), parent(p)
   {
   }
 
+  //What if it is a sub-model we are adding? Does it matter?
   void add( const std::shared_ptr<symmodel>& h )
   {
     members.push_back(h);
+    
+    if( parent->is_submodel( h ) ) // is *NOT* external.
+      {
+	external.push_back( false );
+      }
+    else
+      {
+	external.push_back( true );
+      }
+    //set external or not?
+    //by checking whether h is a submodel of this? E.g. iterate h until it hits null or this.
   }
-};
-
-
-typedef std::function< real_t( string&, symmodel& ) > cmd_functtype;
+}; //end struct hole
 
 
 bool checknumeric( const string& s, real_t& ret )
 {
   bool ok=false;
   std::istringstream iss( s );
-
+  
   iss >> ret;
+
   //check that iss is all done! If it successfully parsed it, we good?
   if( iss.fail() )
     {
@@ -191,7 +205,6 @@ bool checknumeric( const string& s, real_t& ret )
       fprintf(stderr, "REV: error, checknumeric, didn't finish parse of input string to numeric [%s], read in unexpected [%s]?!?!?!?!\n", s.c_str(), wat.c_str());
       exit(1);
     }
-  
 
   return ok;
 }
@@ -200,14 +213,39 @@ bool checknumeric( const string& s, real_t& ret )
 //REV: This is all fine, we call directly from this model. Problem is we pass
 //model& as the argument, and e.g. it tries to access variable from a HOLE.
 //In that case, what do I do? The hole has a pointer to the "real" model.
-//That is fine.
+
 //What if my model references a variable of a submodel?
 //Variable "read" returns what, a string? A real_t?
-//Need to make sure it correctly recursively reads through submodels to find the VAR
-//DIRECTDLY
-real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
+//Need to make sure it correctly recursively reads through submodels to find the VAR DIRECTLY
+
+
+string CAT( const vector<string>& args, const string& sep  )
 {
-  //most basic. Just does the search for it and executes. Returns a real_t, but really we need a "set"
+  if(args.size() == 0)
+    {
+      return "";
+    }
+  else if(args.size() == 1)
+    {
+      return args[0];
+    }
+  else
+    {
+      string s=args[0];
+      for(size_t a=1; a<args.size(); ++a )
+	{
+	  s += sep + args[a];
+	}
+      return s;
+    }
+}
+
+
+
+
+
+real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+{
   vector<string>  parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     {
@@ -218,7 +256,7 @@ real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
   string fname = functparse[0];
   functparse.erase( functparse.begin() );
   vector<string> fargs = functparse;
-
+  
   //Lol, just re-parse them?
   string newarg = CAT( fargs, "," );
   
@@ -235,6 +273,7 @@ real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
 
       if( isnumer == false )
 	{
+	  //This will call recursively if fname is not local to model.
 	  retval = READVAR( fname, model, cmds);
 	}
     }
@@ -242,7 +281,7 @@ real_t DOCMD( const string& arg, symmodel& model, const cmdstore& cmds )
   return retval;
 }
 
-real_t READVAR( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t READVAR( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = doparse( arg );
   //Set some "var_counter" in model to be read.
@@ -250,14 +289,17 @@ real_t READVAR( const string& arg, symmodel& model, const cmdstore& cmds )
     {
       exit(1);
     }
-  real_t val = model.getvar( parsed[0] ).valu;
+
+  //REV: HERE -- at model.getvar, we need to recursively search
+  //This will do the recursive search
+  real_t val = model->readvar( parsed[0] ).valu;
   
   return val;
 }
 
 
 //REV ERROR is parsed[0] is not a variable!!
-real_t SETVAR( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t SETVAR( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 2 )
@@ -267,15 +309,16 @@ real_t SETVAR( const string& arg, symmodel& model, const cmdstore& cmds )
 
   string toexec = parsed[1];
   real_t val = DOCMD( toexec, model, cmds );
+
   //Could have been read and set separately?
-  model.setvar( parsed[0], val );
+  model->setvar( parsed[0], val );
   
   return 0;
 }
 
 
 //Easier to just make sure it's 2...
-real_t SUM( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
@@ -293,7 +336,7 @@ real_t SUM( const string& arg, symmodel& model, const cmdstore& cmds )
 
 
 //product
-real_t MULT( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
@@ -311,7 +354,7 @@ real_t MULT( const string& arg, symmodel& model, const cmdstore& cmds )
 }
 
 //div
-real_t DIV( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
@@ -331,7 +374,7 @@ real_t DIV( const string& arg, symmodel& model, const cmdstore& cmds )
 }
 
 //subtract
-real_t DIFF( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   //subtract all from first one?
   vector<string> parsed = cmds.doparse( arg );
@@ -350,7 +393,7 @@ real_t DIFF( const string& arg, symmodel& model, const cmdstore& cmds )
 }
 
 
-real_t NEGATE( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t NEGATE( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
@@ -361,7 +404,7 @@ real_t NEGATE( const string& arg, symmodel& model, const cmdstore& cmds )
   return (-1.0 * val);
 }
 
-real_t EXP( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
@@ -373,8 +416,14 @@ real_t EXP( const string& arg, symmodel& model, const cmdstore& cmds )
   return exp( val );
 }
 
-//How to deal with numerals? Just parse them as base vectors...
-real_t SUMFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
+//PROBLEM: How to know what it is talking about "inside" the hole? I assume in this case, it will be referring to the base variables (as local to the returned model)
+//Which means...how do I know about correspondence etc.?
+//Might be better to do like, sumall( current/V ), which will iterate through all current/V for each member.
+//Or, pass it all the way through, like SUMALL( current, SUM(current/V, current/E) ). So, in other words, there is no need to explicitly know it's a hole?
+//Although holes contain multiple, which we know. We could do like a "for all by type", which is basically what currents are?
+//Note, some current/cond models might be LOCAL, others foreign?
+//I guess, in this case, all local...? Shit.
+real_t SUMFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
 
@@ -383,7 +432,7 @@ real_t SUMFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
       exit(1);
     }
   
-  vector<hole> myholes = model.gethole( parsed[0] );
+  vector<hole> myholes = model->gethole( parsed[0] );
   
   string toexec = parsed[1];
   real_t val=0;
@@ -396,7 +445,7 @@ real_t SUMFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
 }
 
 //How to deal with numerals? Just parse them as base vectors...
-real_t MULTFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
+real_t MULTFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
 
@@ -405,7 +454,7 @@ real_t MULTFORALL( const string& arg, symmodel& model, const cmdstore& cmds )
       exit(1);
     }
   
-  vector<hole> myholes = model.gethole( parsed[0] );
+  vector<hole> myholes = model->gethole( parsed[0] );
   
   string toexec = parsed[1];
   real_t val=1.0;
@@ -539,7 +588,18 @@ struct updatefunct_t
   }
 };
 
+
+
+//REV: These items can no longer be created on the stack due to shared_ptr.
+//This is a major problem, but necessary because e.g. if I had "this" in a vector, and something pointed to me, and the vector was reallocated to different mem loc
+//That would fuck EVERYTHING up. So, I need a better way to reference parent. This is fine, I just require all to be heap allocations...
+//Just make a factory CREATE type thing.
+
+//That is a pain in the fucking ASS
 struct symmodel
+  :
+  public std::enable_shared_from_this<symmodel>
+
 {
   updatefunct_t updatefunct;
 
@@ -550,7 +610,8 @@ struct symmodel
   
   vector<symvar> vars;
     
-  vector<symmodel> models;
+  //vector<symmodel> models;
+  vector< std::shared_ptr<symmodel> > models;
   vector<string> modelnames;
   vector<string> modeltypes;
 
@@ -564,23 +625,32 @@ struct symmodel
     //adds to type. Parses first.
   }
   
-  
+  //  static filesender* Create( const std::string& runtag, fake_system& _fakesys, const size_t& _wrkperrank , const bool& _todisk )
+  // {
+  //  filesender* fs = new filesender(_fakesys,  _wrkperrank, _todisk);
+  //}
+
+  static std::shared_ptr<symmodel> Create( const string& s,  const string& t )
+  {
+    //REV: haha this will actually work? Don't need to make stack object symmodel tmp(s, t)?
+    return std::make_shared<symmodel>( s, t );
+  }
   
 symmodel( const string& s, const string& t )
 : name( s), type( t )
   {
-    updatefunct = updatefunct_t( this );
+    updatefunct = updatefunct_t( shared_from_this() );
     addtypes( t );
   }
   
   void addvar( const string& s, const string& t )
   {
-    vars.push_back( symvar(s, t) );
+    vars.push_back( symvar(s, t, shared_from_this() ) ); //std::shared_ptr<symmodel>(this)) );
   }
 
   void addhole( const string& s )
   {
-    holes.push_back( hole(s) );
+    holes.push_back( hole(s, shared_from_this()) ); //std::shared_ptr<symmodel>(this) ) );
   }
 
   void addtypes( const string& t )
@@ -592,6 +662,24 @@ symmodel( const string& s, const string& t )
       }
       
   }
+
+
+  //This asks, is s a submodel of me?
+  bool is_submodel( const std::shared_ptr<symmodel>& s )
+  {
+    std::shared_ptr<symmodel> model = s->parent;
+    
+    while( model )
+      {
+	if( model == this )
+	  {
+	    return true;
+	  }
+	model = model->parent;
+      }
+    return false;
+  }
+  
   
   //Is this filling a hole? E.g. with an external model?
   //At what point do I actually "resolve" all variables/models?
@@ -601,13 +689,15 @@ symmodel( const string& s, const string& t )
   //When I specify var...yea it's just single thing.
   //Can holes be for variables too? Or are they model holes? Separate holes? Make all holes just variables? No, models...
   //We need to know when to update. If we only reference variables, we don't know when they've been updated. They must only be parameters?
-  void addmodel( const symmodel& m, const string& localname, const string& localtype )
+  void addmodel( const std::shared_ptr<symmodel>& m, const string& localname, const string& localtype )
   {
     //not a pointer, I assume? Pushes a COPY of it?
-    models.push_back( m );
+    //SHIT
+    //models.push_back( m );
+    models.puch_back( m );
     modelnames.push_back( localname );
     modeltypes.push_back( localtype );
-    models[ models.size() -1 ].parent = std::shared_ptr<symmodel>( this );
+    models[ models.size() -1 ]->parent = shared_from_this(); //std::shared_ptr<symmodel>( this );
     
     //Literally add a (new) submodel to me. This may also be used to fill a hole, but this model "owns" the data.
   }
@@ -645,7 +735,7 @@ symmodel( const string& s, const string& t )
     vector<size_t> r;
     for(size_t n=0; n<models.size(); ++n )
       {
-	if( models[n].name.compare( h ) == 0 )
+	if( models[n]->name.compare( h ) == 0 )
 	  {
 	    r.push_back(n);
 	  }
@@ -670,11 +760,6 @@ symmodel( const string& s, const string& t )
   }
   
 
-  vector<size_t> findmodel( const string& m )
-  {
-    for(size
-  }
-  
   void fillhole( const vector<string>& hole, const std::shared_ptr<symmodel>& modeltofillwith )
   {
     vector<string> parsed = hole;
@@ -701,13 +786,14 @@ symmodel( const string& s, const string& t )
       {
 	string submodel = parsed[0];
 	vector<size_t> locs = find_model( submodel );
-
+	
 	if(locs.size() == 1)
 	  {
 	    size_t mloc = locs[0];
 	    parsed.erase( parsed.begin() );
 	    
-	    models[ mloc ].fillhole( parsed, modeltofillwith );
+	    models[ mloc ]->fillhole( parsed, modeltofillwith );
+
 	  }
 	else
 	  {
@@ -757,14 +843,14 @@ symmodel( const string& s, const string& t )
       for(size_t m=0; m<models.size(); ++m)
 	{
 	  //checks localtype? Or actual model type?
-	  if( models[m].model_is_of_type( t ) == true )
+	  if( models[m]->model_is_of_type( t ) == true )
 	    {
-	      ret.push_back( std::shared_ptr<symmodel>( &models[m] ) );
+	      ret.push_back( models[m] );
 	    }
 	}
       return ret;
     }
-  
+    
   
   //Will this search all "holes" too?? Or only sub-models...? And only one layer down? This will look at "type" of model
   void fillhole_fromtype( const string& hole, const string& modeltofillfrom, const string& t )
@@ -786,6 +872,7 @@ symmodel( const string& s, const string& t )
 
   
 
+  //REV: search for hole too?
   std::shared_ptr<symmodel> get_containing_model( const string& n, string& varname )
   {
     vector<string> parsed = parse( n );
@@ -812,12 +899,14 @@ symmodel( const string& s, const string& t )
   {
     if( parsed.size() == 0 ) //< 1 )
       {
-	return std::shared_ptr< symmodel > ( this );
+	return shared_from_this(); //std::shared_ptr< symmodel > ( this );
       }
     else //if ( parsed.size() >= 1 )
       {
 	string submodel = parsed[0];
 	vector<size_t> locs = find_model( submodel );
+	vector<size_t> hlocs = find_holes( submodel );
+	
 	if( locs.size() == 1 )
 	  {
 	    size_t mloc = locs[0];
@@ -825,7 +914,23 @@ symmodel( const string& s, const string& t )
 	    //Strip off the first part.
 	    //parsed.erase( parsed.begin() );
 	    vector<string> nparsed( parsed.begin()+1, parsed.end() );
-	    return ( models[ mloc ].get_model( nparsed ) );
+	    return ( models[ mloc ]->get_model( nparsed ) );
+	  }
+	else if( hlocs.size() == 1 )
+	  {
+	    size_t hloc = hlocs[0];
+	    
+	    //Strip off the first part.
+	    //parsed.erase( parsed.begin() );
+	    vector<string> nparsed( parsed.begin()+1, parsed.end() );
+	    //return ( models[ mloc ].get_model( nparsed ) );
+	    if( holes[ hloc ].members.size() != 1 )
+	      {
+		fprintf(stderr, "ERROR in get_model, getting [%s] from HOLE, but hole [%s] has size [%lu], but it should be 1\n", submodel.c_str(), holes[hloc].name.c_str(), holes[hloc].members.size() );
+		exit(1);
+	      }
+	    return ( holes[ hloc ].members[0]->get_model( nparsed ) ); //REV: It is external at some point fuck!!!!!!!!!!! I can check whether the returned "containing" model is
+	    //external or not after the fact... but I need to always make sure it sends back the containing model with it I guess?
 	  }
 	else
 	  {
@@ -850,7 +955,8 @@ symmodel( const string& s, const string& t )
     fprintf(stderr, "REV: ERROR variable [%s] could not be found in this model [%s]\n", s.c_str(), name.c_str() );
     exit(1);
   }
-  
+
+  //REV: meh these should be shared ptrs too?
   symvar& getvar( const string& s )
   {
     //std::vector<string> parsed = parse( s );
@@ -956,7 +1062,7 @@ symmodel( const string& s, const string& t )
     prefixprint( depth );
     for(size_t subm=0; subm<models.size(); ++subm)
       {
-	models[subm].check_and_enumerate( depth+1 );
+	models[subm]->check_and_enumerate( depth+1 );
       }
     
 
@@ -965,149 +1071,153 @@ symmodel( const string& s, const string& t )
 }; //end STRUCT SYMMODEL
 
 
-symmodel pos3d("pos3d", "3dposition|location|um" );
-pos3d.addvar( "x", "xdimension|um" );
-pos3d.addvar( "y", "ydimension|um" );
-pos3d.addvar( "z", "zdimension|um" );
+void test_build()
+{
+  auto pos3d = symmodel::Create("pos3d", "3dposition|location|um" );
+  //symmodel pos3d("pos3d", "3dposition|location|um" );
+  pos3d->addvar( "x", "xdimension|um" );
+  pos3d->addvar( "y", "ydimension|um" );
+  pos3d->addvar( "z", "zdimension|um" );
 
-//Needs to know what to "read from" to see if I increase?
-symmodel gAMPA("gAMPA", "conductance|GluR-mediated-conductance|synaptically-mediated-conductance" );
-gAMPA.addvar( "E", "reversal-potential|mV" );
-gAMPA.addvar( "g", "conductance|nS" );
-gAMPA.addvar( "tau1", "exp-rise-time-constant|ms" );
-gAMPA.addvar( "tau2", "exp-decay-time-constant|ms" );
-gAMPA.addvar( "affinity", "Glu-affinity|transmitter-affinity" );
-gAMPA.addhole( "membrane" );
+  //Needs to know what to "read from" to see if I increase?
+  //symmodel gAMPA("gAMPA", "conductance|GluR-mediated-conductance|synaptically-mediated-conductance" );
+  auto gAMPA = symmodel::Create("gAMPA", "conductance|GluR-mediated-conductance|synaptically-mediated-conductance" );
+  gAMPA->addvar( "E", "reversal-potential|mV" );
+  gAMPA->addvar( "g", "conductance|nS" );
+  gAMPA->addvar( "tau1", "exp-rise-time-constant|ms" );
+  gAMPA->addvar( "tau2", "exp-decay-time-constant|ms" );
+  gAMPA->addvar( "affinity", "Glu-affinity|transmitter-affinity" );
+  gAMPA->addhole( "membrane" );
 
-symmodel gNMDA("gNMDA", "conductance|GluR-mediated-conductance|synaptically-mediated-conductance" );
-gAMPA.addvar( "E", "reversal-potential|mV" );
-gAMPA.addvar( "g", "conductance|nS" );
-gAMPA.addvar( "g2", "ungated-conductance|nS" );
-gAMPA.addvar( "tau1", "exp-rise-time-constant|ms" );
-gAMPA.addvar( "tau2", "exp-decay-time-constant|ms" );
-gAMPA.addvar( "affinity", "Glu-affinity|transmitter-affinity" );
-gAMPA.addhole( "membrane" );
+  auto gNMDA = symmodel::Create("gNMDA", "conductance|GluR-mediated-conductance|synaptically-mediated-conductance" );
+  gAMPA->addvar( "E", "reversal-potential|mV" );
+  gAMPA->addvar( "g", "conductance|nS" );
+  gAMPA->addvar( "g2", "ungated-conductance|nS" );
+  gAMPA->addvar( "tau1", "exp-rise-time-constant|ms" );
+  gAMPA->addvar( "tau2", "exp-decay-time-constant|ms" );
+  gAMPA->addvar( "affinity", "Glu-affinity|transmitter-affinity" );
+  gAMPA->addhole( "membrane" );
 
-symmodel gLeak("gLeak", "conductance");
-//I need to tell it that the V used in the update equation of gLeak is the V of adex!!!
-gLeak.addvar( "E", "reversal-potential|mV" );
-gLeak.addvar( "g", "conductance|nS" );
-gLeak.addhole( "membrane" ); //do I always need to tell it this? Do I need to explicitly connect all of these? Do I automatically view all guys "up"?
+  auto gLeak = symmodel::Create("gLeak", "conductance");
+  //I need to tell it that the V used in the update equation of gLeak is the V of adex!!!
+  gLeak->addvar( "E", "reversal-potential|mV" );
+  gLeak->addvar( "g", "conductance|nS" );
+  gLeak->addhole( "membrane" ); //do I always need to tell it this? Do I need to explicitly connect all of these? Do I automatically view all guys "up"?
 
-symmodel adex("adex", "spiking|neuron");
-adex.addvar( "V", "membrane-potential|mV" ); //membrane potential
-adex.addvar( "W", "recovery-potential|mV" ); //recovery potential
-adex.addvar( "tspk", "spike-time|time|ms" ); //spiketime, time,
+  auto adex = symmodel::Create("adex", "spiking|neuron");
+  adex->addvar( "V", "membrane-potential|mV" ); //membrane potential
+  adex->addvar( "W", "recovery-potential|mV" ); //recovery potential
+  adex->addvar( "tspk", "spike-time|time|ms" ); //spiketime, time,
 
-adex.addhole( "currents" );
-adex.addhole( "conductances" ); //Could separate these into synapses etc? E.g. presyn and postsyn? Inhib/excit. etc.
-adex.addhole( "postsyn" );
-adex.addhole( "presyn" );
+  adex->addhole( "currents" );
+  adex->addhole( "conductances" ); //Could separate these into synapses etc? E.g. presyn and postsyn? Inhib/excit. etc.
+  adex->addhole( "postsyn" );
+  adex->addhole( "presyn" );
 
-adex.addmodel( gLeak, "gL", "" );
+  adex->addmodel( gLeak, "gL", "" );
 
-adex.addmodel( pos3d, "position", "" );
+  adex->addmodel( pos3d, "position", "" );
+  
+  auto Iinj = symmodel::Create( "Iinj", "current" );
+  Iinj->addvar( "I", "current|uA" );
 
-synmodel Iinj( "Iinj", "current" );
-Iinj.addvar( "I", "current|uA" );
+  auto spksyn = symmodel::Create( "spksyn", "synapse");
+  spksyn->addvar( "delay", "delay|ms" );
+  spksyn->addvar( "weight", "synaptic-efficacy|nS" );
+  spksyn->addvar( "hitweight", "spike-efficacy|nS" );
+  spksyn->addhole( "presyn-neuron" );
+  spksyn->addhole( "postsyn-neuron" ); //conductance?
+  spksyn->addhole( "presyn-spiketimer" ); //must be of type "spiker" or something?
+  spksyn->addhole( "postsyn-conductances" ); //How do I know which one corresponds to gAMPA, and GNMDA. Oh, I make them with same name so fine. Problem is, how much do I add to
+  //each? E.g. does each differnet synapse model have differnet weightings for the different receptor types. Does it normalize automatically between them?
+  //Uh, add it at the postsyn level? I.e. how strong gNMDA/gAMPA is for each...? Like some may be clustered? Do it per synapse? In which case we'd add multiple weightings if
+  //we want to do it here? How about every single one has its own weight? Is there a way to e.g. add a thing for every model, but outside it...
 
-synmodel spksyn( "spksyn", "synapse");
-spksyn.addvar( "delay", "delay|ms" );
-spksyn.addvar( "weight", "synaptic-efficacy|nS" );
-spksyn.addvar( "hitweight", "spike-efficacy|nS" );
-spksyn.addhole( "presyn-neuron" );
-spksyn.addhole( "postsyn-neuron" ); //conductance?
-spksyn.addhole( "presyn-spiketimer" ); //must be of type "spiker" or something?
-spksyn.addhole( "postsyn-conductances" ); //How do I know which one corresponds to gAMPA, and GNMDA. Oh, I make them with same name so fine. Problem is, how much do I add to
-//each? E.g. does each differnet synapse model have differnet weightings for the different receptor types. Does it normalize automatically between them?
-//Uh, add it at the postsyn level? I.e. how strong gNMDA/gAMPA is for each...? Like some may be clustered? Do it per synapse? In which case we'd add multiple weightings if
-//we want to do it here? How about every single one has its own weight? Is there a way to e.g. add a thing for every model, but outside it...
-
-//Fill-hole-with-holes (by type) seems like definitely something I want
-//Or, fill-by-type, but where it searchers holes? fuck...
-
-
-//So, I connect this guy to other guy as a postsyn guy. And tell it, to only add to GLU type guys. OK, and then it goes and adds. Or I manually specify which ones to add to.
-//If I only generate e.g. a hole, and tell it to "point to" those guys, it will get in trouble because 
-
-//It will "generate" hitweights in here based on which guys I tell it is connected to!
+  //Fill-hole-with-holes (by type) seems like definitely something I want
+  //Or, fill-by-type, but where it searchers holes? fuck...
 
 
+  //So, I connect this guy to other guy as a postsyn guy. And tell it, to only add to GLU type guys. OK, and then it goes and adds. Or I manually specify which ones to add to.
+  //If I only generate e.g. a hole, and tell it to "point to" those guys, it will get in trouble because 
 
-//This is an empty model. Need to know "root" of my reference in order to get it. There must always be a path...so that's fine...
-//Updates all of neuron type, then updates all of synapse type, etc.? No, there is no "explicitly update model X", it is all implicit... So this has no update function.
-symmodel sc("sc", "circuit");
-
-//Neurons and synapses are "holes"? They're just types haha.
-//Only vars and holes can be referenced directly...? Nah, models can too, they are just "variables" of this model...? Shit. How to update?
-//All models are updated...
-sc.addmodel( adex, "adex1", "" ); //Has no specific "local functions"
-sc.addmodel( adex, "adex2", "" );
-sc.addmodel( spksyn, "syn2-1", "" );
-sc.addmodel( spksyn, "syn1-1", "" ); //Specify type of synapse? Or might have different receptor to each postsyn target?
-
-//sc.connect( "syn2-1", "adex1" );
-//sc.connect( "adex2", "syn2-1" );
+  //It will "generate" hitweights in here based on which guys I tell it is connected to!
 
 
 
-//Where do I want to put the conductances? They should be where they are "size"
-//Best way is to add as postsyn, and "force" all presyn guys to add the right thing for me (how do I know when to do this?). In other words, if I add gNMDA, all presyn guys
-//know to automatically add variable for it.
-sc.addmodel( gAMPA, "adex1/gAMPA1", "" );
-sc.addmodel( gNMDA, "adex1/gNMDA1", "" );
+  //This is an empty model. Need to know "root" of my reference in order to get it. There must always be a path...so that's fine...
+  //Updates all of neuron type, then updates all of synapse type, etc.? No, there is no "explicitly update model X", it is all implicit... So this has no update function.
+  auto sc = symmodel::Create("sc", "circuit");
 
+  //Neurons and synapses are "holes"? They're just types haha.
+  //Only vars and holes can be referenced directly...? Nah, models can too, they are just "variables" of this model...? Shit. How to update?
+  //All models are updated...
+  sc->addmodel( adex, "adex1", "" ); //Has no specific "local functions"
+  sc->addmodel( adex, "adex2", "" );
+  sc->addmodel( spksyn, "syn2-1", "" );
+  sc->addmodel( spksyn, "syn1-1", "" ); //Specify type of synapse? Or might have different receptor to each postsyn target?
 
-sc.addmodel( Iinj, "adex1/Iinj1", "" );
-sc.fillhole( "adex1/currents", "adex1/Iinj1" );
-
-sc.fillhole( "adex1/conductances", "adex1/gL" );
-sc.fillhole( "adex1/conductances", "adex1/gAMPA1" );
-sc.fillhole( "adex1/conductances", "adex1/gNMDA1" );
-
-//Fill hole holes? I.e. for all conductances, fill V with me?
-//Do "names" appear in models? What becomes the local name??? Is it in "hole" after all?
-//I.e. holes are first-order, just as models are...no I.e. blah/conductances/blah
-//It might have MANY postsynaptic connections...shit.
-sc.fillhole( "adex1/gAMPA1/membrane", "adex1" );
-sc.fillhole( "adex1/gNMDA1/membrane", "adex1" );
-sc.fillhole( "adex1/gL/membrane", "adex1" );
-
-
-//REV: I can literally artificially make a list of all postsyn grps (by making a list of postsyn_synapses or something?)
-//Will it automatically fill everything from those conductances?
-sc.fillhole( "syn2-1/postsyn-neuron", "adex1" );
-sc.fillhole( "syn2-1/presyn-neuron", "adex2" );
-sc.fillhole( "syn2-1/presyn-spiketimer", "adex2" );
-
-//Alternatively, use sc.fillhole_bytype( "syn2-1/postsyn-conductance", "GluR-mediated-conductance" );
-sc.fillhole( "syn2-1/postsyn-conductance", "adex1/gAMPA1" );
-sc.fillhole( "syn2-1/postsyn-conductance", "adex1/gNMDA1" );
+  //sc->connect( "syn2-1", "adex1" );
+  //sc->connect( "adex2", "syn2-1" );
 
 
 
-
-sc.fillhole( "adex1/conductances", "adex1/gL" );
-sc.fillhole( "adex2/gL/membrane", "adex2" );
-
-
-sc.fillhole( "syn1-1/postsyn-neuron", "adex1" );
-sc.fillhole( "syn1-1/presyn-neuron", "adex1" );
-
-sc.fillhole( "syn1-1/presyn-spiketimer", "adex1" );
-
-//Alternatively, use sc.fillhole_bytype( "syn2-1/postsyn-conductance", "GluR-mediated-conductance" );
-sc.fillhole( "syn1-1/postsyn-conductance", "adex1/gAMPA1" );
-sc.fillhole( "syn1-1/postsyn-conductance", "adex1/gNMDA1" );
+  //Where do I want to put the conductances? They should be where they are "size"
+  //Best way is to add as postsyn, and "force" all presyn guys to add the right thing for me (how do I know when to do this?). In other words, if I add gNMDA, all presyn guys
+  //know to automatically add variable for it.
+  sc->addmodel( gAMPA, "adex1/gAMPA1", "" );
+  sc->addmodel( gNMDA, "adex1/gNMDA1", "" );
 
 
+  sc->addmodel( Iinj, "adex1/Iinj1", "" );
+  sc->fillhole( "adex1/currents", "adex1/Iinj1" );
 
-//Note, some groups may NOT have presyn (!!!) or postsyn or something ;) E.g. "non-source axons"
-sc.fillhole( "adex2/postsyn", "syn2-1" );
-sc.fillhole( "adex1/postsyn", "syn1-1" );
-sc.fillhole( "adex1/presyn", "syn1-1" );
-sc.fillhole( "adex1/presyn", "syn2-1" );
+  sc->fillhole( "adex1/conductances", "adex1/gL" );
+  sc->fillhole( "adex1/conductances", "adex1/gAMPA1" );
+  sc->fillhole( "adex1/conductances", "adex1/gNMDA1" );
 
+  //Fill hole holes? I.e. for all conductances, fill V with me?
+  //Do "names" appear in models? What becomes the local name??? Is it in "hole" after all?
+  //I.e. holes are first-order, just as models are...no I.e. blah/conductances/blah
+  //It might have MANY postsynaptic connections...shit.
+  sc->fillhole( "adex1/gAMPA1/membrane", "adex1" );
+  sc->fillhole( "adex1/gNMDA1/membrane", "adex1" );
+  sc->fillhole( "adex1/gL/membrane", "adex1" );
+
+
+  //REV: I can literally artificially make a list of all postsyn grps (by making a list of postsyn_synapses or something?)
+  //Will it automatically fill everything from those conductances?
+  sc->fillhole( "syn2-1/postsyn-neuron", "adex1" );
+  sc->fillhole( "syn2-1/presyn-neuron", "adex2" );
+  sc->fillhole( "syn2-1/presyn-spiketimer", "adex2" );
+
+  //Alternatively, use sc.fillhole_bytype( "syn2-1/postsyn-conductance", "GluR-mediated-conductance" );
+  sc->fillhole( "syn2-1/postsyn-conductance", "adex1/gAMPA1" );
+  sc->fillhole( "syn2-1/postsyn-conductance", "adex1/gNMDA1" );
+
+
+
+
+  sc->fillhole( "adex1/conductances", "adex1/gL" );
+  sc->fillhole( "adex2/gL/membrane", "adex2" );
+
+
+  sc->fillhole( "syn1-1/postsyn-neuron", "adex1" );
+  sc->fillhole( "syn1-1/presyn-neuron", "adex1" );
+
+  sc->fillhole( "syn1-1/presyn-spiketimer", "adex1" );
+
+  //Alternatively, use sc->fillhole_bytype( "syn2-1/postsyn-conductance", "GluR-mediated-conductance" );
+  sc->fillhole( "syn1-1/postsyn-conductance", "adex1/gAMPA1" );
+  sc->fillhole( "syn1-1/postsyn-conductance", "adex1/gNMDA1" );
+
+
+
+  //Note, some groups may NOT have presyn (!!!) or postsyn or something ;) E.g. "non-source axons"
+  sc->fillhole( "adex2/postsyn", "syn2-1" );
+  sc->fillhole( "adex1/postsyn", "syn1-1" );
+  sc->fillhole( "adex1/presyn", "syn1-1" );
+  sc->fillhole( "adex1/presyn", "syn2-1" );
+}
 
 
 
@@ -1182,3 +1292,57 @@ sc.fillhole( "adex1/presyn", "syn2-1" );
 //By name? By type? Dont like these question marks...
 //At any rate, I need to make the variables...
 //I can determine if I need state based only on symbolic model ;)
+
+
+
+
+
+
+
+  
+//Major question is, how do holes work?
+//For example, I say, get membrane/V. What if I have multiple models in membrane hole? In that case, it returns a vector of V? Or it errors? Or it just returns one V?
+//One nice way is to have it return all of them. However, in that case, I would iterate directly on them. E.g. I would get a "vector" type back, which I would then pass
+//as an argument to SUm or DIV or some shit. Or iterate through it. Whatever.
+//Just check that there is only one...?
+
+
+
+//OK, what is happening?
+
+//We have:
+//holes, which have pointers to models in them.
+//models might be external (shit?), or internal (yay?).
+//we have local variables, and local models.
+
+//We want to be able to
+//1) reference any variable by saying CONTAINING/BLAH/VAR
+//   however, if at any point it is a hole, it must be only members.size() == 1 (or we have a problem)
+//   furthermore, if it *is* a hole (more specifically, if it is external), we need to have a way of "marking" that at read/write time, to make sure it's the right idx?
+//   Actually, same for internal models.
+
+//   Right now, we find models, and we have ways to find holes.
+//   If we find a hole (instead of model), we make sure it is 1, and return the model and var just as if it were an internal model.
+//   Is that the case? We really should somehow mark that it is external.
+//   We can figure that out by doing buildpath() for each...and comparing?
+// It's beneficial to know because at compile time, when I determine how to do it, I need to know that it is external. So that I can correctly reference the "connection"
+// between my model, and that one. Actually, no. Just literally, make all holes go through offset references (?). Makes it easier, but wastes? Just leave a marker when
+// "filling" the hole, that says "this member is external" ;)
+
+
+//When I "read" from a hole, I need to note that it might not be 1-1? In other words, referencing "g" in gAMPA? No, better example is synaptic pre spike time.
+//for "this" synapse, e.g. 1000, I am referencing spike time of presyn neuron. So, my pointer is to "spiker", which is a "hole". Furthermore, it is "external".
+//
+
+//Issue with shared ptr, is that I am making them point to memory that may be deallocated by vector when it leaves scope at some point? In other words, I need to allocate with shared ptr originally (PITA)
+
+
+
+//REV: everything is fine. Just make sure I can find it. If I can find it, I can check external or not. In worst case I might go through multiple layers of holes.
+//In most extreme case, it might go in an infinite loop?
+//In other words, BLAH/CURRENT points to ME. But we end up in finite number of guys. we have no "back up". Can't have multiple parents I think...
+
+
+
+//Fuck, can I have problem where, child points to parent with pointer, but parent contains child. So neither can be deallocated...?
+//But a pointer to parent will still exist somewhere, so OK.
