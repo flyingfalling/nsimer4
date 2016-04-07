@@ -51,7 +51,8 @@ namespace fparser
     //Easier to parse it and turn it into a single string, but how to do that?
     //I could do it with nested parse lol...
     stringform = (
-		  fname
+		   qi::repeat(0, 1)
+		   [fname
 		  >>
 		  *(
 		    char_('(')
@@ -67,6 +68,8 @@ namespace fparser
 		    char_(')')
 		    )
 			
+		  
+		   ]
 		  );
 
 
@@ -101,9 +104,9 @@ namespace fparser
     //Does the star work here? Can I have just a literal for the vect form? What will it parse if there is nothing? It will infinitely parse?
     vecform = (
 	       *(
-		 stringform [push_back( ref(_val), _1) ]
+		 estringform [push_back( ref(_val), _1) ]
 		 >>
-		 *( ',' >> stringform [push_back( ref(_val), _1) ] )
+		 *( ',' >> estringform [push_back( ref(_val), _1) ] )
 		 )
 	       );
 	  
@@ -112,8 +115,27 @@ namespace fparser
     //Need to specify to return it e.g. lexeme[ ]
     //Easier to parse it and turn it into a single string, but how to do that?
     //I could do it with nested parse lol...
+    estringform = (
+		   fname
+		  >>
+		  *(
+		    char_('(')
+		    >>
+		    stringform
+		    >>
+		    *(
+		      char_(',')
+		      >>
+		      stringform
+		      )
+		    >>
+		    char_(')')
+		    )
+		   );
+    
     stringform = (
-		  fname
+		   qi::repeat(0, 1)
+		   [fname
 		  >>
 		  *(
 		    char_('(')
@@ -129,7 +151,11 @@ namespace fparser
 		    char_(')')
 		    )
 			
+		  
+		   ]
 		  );
+
+
 
 
     //Read until (, or if no (, then just read and exit...

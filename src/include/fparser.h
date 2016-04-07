@@ -57,6 +57,7 @@ namespace fparser
       
       //REV: is second arg what it takes, or what it returns?
       qi::rule< It, vector<string>(), qi::space_type > vecform;
+      qi::rule< It, string(), qi::space_type > estringform;
       qi::rule< It, string(), qi::space_type > stringform;
       qi::rule< It, string(), qi::space_type > fname;
       
