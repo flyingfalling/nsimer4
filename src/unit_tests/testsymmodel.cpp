@@ -21,13 +21,13 @@ void test_build()
   gAMPA->addhole( "membrane" );
 
   auto gNMDA = symmodel::Create("gNMDA", "conductance|GluR-mediated-conductance|synaptically-mediated-conductance" );
-  gAMPA->addvar( "E", "reversal-potential|mV" );
-  gAMPA->addvar( "g", "conductance|nS" );
-  gAMPA->addvar( "g2", "ungated-conductance|nS" );
-  gAMPA->addvar( "tau1", "exp-rise-time-constant|ms" );
-  gAMPA->addvar( "tau2", "exp-decay-time-constant|ms" );
-  gAMPA->addvar( "affinity", "Glu-affinity|transmitter-affinity" );
-  gAMPA->addhole( "membrane" );
+  gNMDA->addvar( "E", "reversal-potential|mV" );
+  gNMDA->addvar( "g", "conductance|nS" );
+  gNMDA->addvar( "g2", "ungated-conductance|nS" );
+  gNMDA->addvar( "tau1", "exp-rise-time-constant|ms" );
+  gNMDA->addvar( "tau2", "exp-decay-time-constant|ms" );
+  gNMDA->addvar( "affinity", "Glu-affinity|transmitter-affinity" );
+  gNMDA->addhole( "membrane" );
 
   auto gLeak = symmodel::Create("gLeak", "conductance");
   //I need to tell it that the V used in the update equation of gLeak is the V of adex!!!
@@ -122,8 +122,8 @@ void test_build()
   sc->fillhole( "syn2-1/presyn-spiketimer", "adex2" );
 
   //Alternatively, use sc.fillhole_bytype( "syn2-1/postsyn-conductance", "GluR-mediated-conductance" );
-  sc->fillhole( "syn2-1/postsyn-conductance", "adex1/gAMPA1" );
-  sc->fillhole( "syn2-1/postsyn-conductance", "adex1/gNMDA1" );
+  sc->fillhole( "syn2-1/postsyn-conductances", "adex1/gAMPA1" );
+  sc->fillhole( "syn2-1/postsyn-conductances", "adex1/gNMDA1" );
 
 
 
@@ -138,8 +138,8 @@ void test_build()
   sc->fillhole( "syn1-1/presyn-spiketimer", "adex1" );
 
   //Alternatively, use sc->fillhole_bytype( "syn2-1/postsyn-conductance", "GluR-mediated-conductance" );
-  sc->fillhole( "syn1-1/postsyn-conductance", "adex1/gAMPA1" );
-  sc->fillhole( "syn1-1/postsyn-conductance", "adex1/gNMDA1" );
+  sc->fillhole( "syn1-1/postsyn-conductances", "adex1/gAMPA1" );
+  sc->fillhole( "syn1-1/postsyn-conductances", "adex1/gNMDA1" );
 
 
 
@@ -148,9 +148,14 @@ void test_build()
   sc->fillhole( "adex1/postsyn", "syn1-1" );
   sc->fillhole( "adex1/presyn", "syn1-1" );
   sc->fillhole( "adex1/presyn", "syn2-1" );
+
+
+  sc->check_and_enumerate();
 }
 
 int main()
 {
   test_build();
+
+  
 }

@@ -323,10 +323,20 @@ symmodel( const string& s, const string& t )
     //not a pointer, I assume? Pushes a COPY of it?
     //SHIT
     //models.push_back( m );
-    models.push_back( m );
-    modelnames.push_back( localname );
-    modeltypes.push_back( localtype );
-    models[ models.size() -1 ]->parent = shared_from_this(); //std::shared_ptr<symmodel>( this );
+
+    //REV: need to get what would be the containing model! Then push it.
+
+    string newmodelname;
+    auto realmodel = get_containing_model( localname, newmodelname );
+
+    realmodel->models.push_back( m );
+    realmodel->modelnames.push_back( newmodelname );
+    realmodel->modeltypes.push_back( localtype );
+    m->parent = realmodel;
+    //models.push_back( m );
+    //modelnames.push_back( localname );
+    //modeltypes.push_back( localtype );
+    //models[ models.size() -1 ]->parent = shared_from_this(); //std::shared_ptr<symmodel>( this );
     
     //Literally add a (new) submodel to me. This may also be used to fill a hole, but this model "owns" the data.
   }
@@ -365,7 +375,8 @@ symmodel( const string& s, const string& t )
     vector<size_t> r;
     for(size_t n=0; n<models.size(); ++n )
       {
-	if( models[n]->name.compare( h ) == 0 )
+	//if( models[n]->name.compare( h ) == 0 )
+	if( modelnames[n].compare( h ) == 0 )
 	  {
 	    r.push_back(n);
 	  }
@@ -383,16 +394,16 @@ symmodel( const string& s, const string& t )
   //time. Much safer ;) But the way it finds the pointer is it is resolved at this
   //point in time.
 
-  void fillhole( const string& hole, const std::shared_ptr<symmodel>& modeltofillwith )
+  void fillhole( const string& h, const std::shared_ptr<symmodel>& modeltofillwith )
   {
-    vector<string> parsed = parse( hole );
+    vector<string> parsed = parse( h );
     fillhole( parsed, modeltofillwith );
   }
   
 
-  void fillhole( const vector<string>& hole, const std::shared_ptr<symmodel>& modeltofillwith )
+  void fillhole( const vector<string>& h, const std::shared_ptr<symmodel>& modeltofillwith )
   {
-    vector<string> parsed = hole;
+    vector<string> parsed = h;
     if( parsed.size() == 0 )
       {
 	fprintf(stderr, "ERROR in fillhole, parsed size is zero, hole doesn't exist?\n"); //, hole.c_str());
@@ -409,7 +420,7 @@ symmodel( const string& s, const string& t )
 	  }
 	else
 	  {
-	    fprintf(stderr, "ERROR in fill hole, hole (holeidxs.size() != 1), [%s] doesn't exist\n", holename.c_str());
+	    fprintf(stderr, "ERROR in fill hole, hole (holeidxs.size() != 1), [%s] doesn't exist (in model [%s])\n", holename.c_str(), name.c_str());
 	    exit(1);
 	  }
       }
@@ -436,12 +447,12 @@ symmodel( const string& s, const string& t )
   
   //OK, so it tries to resolve it now within the circuit. This is good. If we just
   //fed a "free" local model, it wouldn't know to try to e.g. push it back or whatever.
-  void fillhole( const string& hole, const string& modeltofillwith )
+  void fillhole( const string& h, const string& modeltofillwith )
   {
 
     std::shared_ptr<symmodel> model = get_model( modeltofillwith );
 
-    fillhole( hole, model );
+    fillhole( h, model );
     
   }
 
@@ -658,10 +669,10 @@ symmodel( const string& s, const string& t )
   void check_and_enumerate( size_t depth = 0 )
   {
     prefixprint( depth );
-    fprintf( stdout, "MODEL [%s]\n", name.c_str() );
+    fprintf( stdout, "\nMODEL [%s]\n", name.c_str() );
 
     prefixprint( depth );
-    fprintf( stdout, "TYPES: ");
+    fprintf( stdout, "=TYPES: ");
     for(size_t t=0; t<type.size(); ++t)
       {
 	fprintf(stdout, "[%s]", type[t].c_str() );
@@ -671,16 +682,16 @@ symmodel( const string& s, const string& t )
     prefixprint( depth );
     //Print HOLES and their filled models?
     //Print "path" to highest parent of every model by tracing parent until NULL?
-    fprintf(stdout, "HOLES:");
+    fprintf(stdout, "=HOLES:\n");
     for(size_t h=0; h<holes.size(); ++h)
       {
 	prefixprint( depth );
-	fprintf(stdout, " [%s], filled by [%lu] members\n", holes[h].name.c_str(), holes[h].members.size() );
+	fprintf(stdout, "  [%s], filled by [%lu] members\n", holes[h].name.c_str(), holes[h].members.size() );
 
 	for(size_t m=0; m<holes[h].members.size(); ++m)
 	  {
 	    prefixprint( depth );
-	    fprintf(stdout, "  [%lu]: [%s]\n", m, holes[h].members[m]->buildpath().c_str() );
+	    fprintf(stdout, "   [%lu]: [%s]\n", m, holes[h].members[m]->buildpath().c_str() );
 	  }
       }
 
@@ -689,15 +700,16 @@ symmodel( const string& s, const string& t )
     check_update_funct();
     
     prefixprint( depth );
-    fprintf(stdout, "SUBMODELS:\n");
-    prefixprint( depth );
+    fprintf(stdout, "=SUBMODELS:\n");
+    //prefixprint( depth );
     for(size_t subm=0; subm<models.size(); ++subm)
       {
-	models[subm]->check_and_enumerate( depth+1 );
+	size_t jump=5;
+	models[subm]->check_and_enumerate( depth+jump );
       }
     
 
-  }
+  } //end check_and_enumerate
   
 }; //end STRUCT SYMMODEL
 
