@@ -54,17 +54,17 @@ namespace fparser
 		  fname
 		  >>
 		  *(
-		    '('
+		    char_('(')
 		    >>
 		    stringform
 		    >>
 		    *(
-		      ','
+		      char_(',')
 		      >>
 		      stringform
 		      )
 		    >>
-		    ')'
+		    char_(')')
 		    )
 			
 		  );
