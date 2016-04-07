@@ -6,7 +6,7 @@
 
 real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
-  vector<string>  parsed = cmds.doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     {
       exit(1);
@@ -44,7 +44,7 @@ real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstor
 
 real_t READVAR( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
-  vector<string> parsed = doparse( arg );
+  vector<string> parsed = cmds.doparse( arg );
   //Set some "var_counter" in model to be read.
   if( parsed.size() != 1 )
     {
@@ -123,7 +123,7 @@ real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore&
 
   string toexec = parsed[0];
 
-  real_t val=DOCMD( toexec, models, cmds );
+  real_t val=DOCMD( toexec, model, cmds );
   
   for( size_t tosum=1; tosum<parsed.size(); ++tosum)
     {
@@ -193,14 +193,14 @@ real_t SUMFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmd
       exit(1);
     }
   
-  vector<hole> myholes = model->gethole( parsed[0] );
+  hole myhole = model->gethole( parsed[0] );
   
   string toexec = parsed[1];
   real_t val=0;
-  for( size_t h=0; h<myholes.size(); ++h)
+  for( size_t h=0; h<myhole.members.size(); ++h)
     {
-      symmodel m = *myholes[h];
-      val += DOCMD( toexec, m, cmds ); //does DOCMD return a real_t val? Fuck...
+      std::shared_ptr<symmodel> holemod = myhole.members[h];
+      val += DOCMD( toexec, holemod, cmds ); //does DOCMD return a real_t val? Fuck...
     }
   return val;
 }
@@ -214,17 +214,56 @@ real_t MULTFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cm
     {
       exit(1);
     }
-  
-  vector<hole> myholes = model->gethole( parsed[0] );
+
+  hole myhole = model->gethole( parsed[0] );
   
   string toexec = parsed[1];
   real_t val=1.0;
-  for( size_t h=0; h<myholes.size(); ++h)
+  for( size_t h=0; h<myhole.members.size(); ++h)
     {
-      symmodel m = *myholes[h];
-      val *= DOCMD( toexec, m, cmds ); //does DOCMD return a real_t val? Fuck...
+      std::shared_ptr<symmodel> holemod = myhole.members[h];
+      val *= DOCMD( toexec, holemod, cmds ); //does DOCMD return a real_t val? Fuck...
     }
+  
   return val;
 }
 
 
+
+void hole::add( const std::shared_ptr<symmodel>& h )
+  {
+    members.push_back(h);
+    
+    if( parent->is_submodel( h ) ) // is *NOT* external.
+      {
+	external.push_back( false );
+      }
+    else
+      {
+	external.push_back( true );
+      }
+    //set external or not?
+    //by checking whether h is a submodel of this? E.g. iterate h until it hits null or this.
+  }
+
+
+
+#define ADDFUNCT(fname)							\
+  {									\
+    cmd_functtype fa = fname;						\
+    add( #fname, fa );							\
+  }
+
+cmdstore::cmdstore()
+  {
+    ADDFUNCT( DOCMD );
+    ADDFUNCT( READVAR );
+    ADDFUNCT( SETVAR );
+    ADDFUNCT( SUM );
+    ADDFUNCT( MULT );
+    ADDFUNCT( DIV );
+    ADDFUNCT( DIFF );
+    ADDFUNCT( NEGATE );
+    ADDFUNCT( SUMFORALL );
+    ADDFUNCT( MULTFORALL );
+  }

@@ -3,6 +3,7 @@
 
 #include <commontypes.h>
 #include <fparser.h>
+#include <parsehelpers.h>
 
 #include <sys/types.h>
 #include <vector>
@@ -18,18 +19,18 @@ using std::string;
 
 //forward decl struct symmodel
 struct symmodel;
+struct cmdstore;
+
+typedef std::function< real_t( const string&, std::shared_ptr<symmodel>&, const cmdstore& ) > cmd_functtype;
 
 
-typedef std::function< real_t( string&, std::shared_ptr<symmodel>& ) > cmd_functtype;
-
-
-vector<string> parse( const str& name)
+vector<string> parse( const string& name)
 {
   bool emptyrepeats=false;
   return tokenize_string( name, "/", emptyrepeats );
 }
 
-vector<string> parsetypes( const str& name)
+vector<string> parsetypes( const string& name)
 {
   bool emptyrepeats=false;
   return tokenize_string( name, "|", emptyrepeats );
@@ -74,6 +75,7 @@ symvar( const string& n, const string& t, const std::shared_ptr<symmodel>& p  )
 : name(n), type(t), parent(p)
   {
   }
+
 }; //end struct symvar
 
 
@@ -93,45 +95,23 @@ hole( const string& n, const std::shared_ptr<symmodel>& p )
   }
 
   //What if it is a sub-model we are adding? Does it matter?
-  void add( const std::shared_ptr<symmodel>& h )
-  {
-    members.push_back(h);
-    
-    if( parent->is_submodel( h ) ) // is *NOT* external.
-      {
-	external.push_back( false );
-      }
-    else
-      {
-	external.push_back( true );
-      }
-    //set external or not?
-    //by checking whether h is a submodel of this? E.g. iterate h until it hits null or this.
-  }
+  void add( const std::shared_ptr<symmodel>& h );
+
 }; //end struct hole
 
+
+//stringify macro
+#define STR( _mystring )  #_mystring
 
 struct cmdstore
 {
   vector< string > functnames;
   vector< cmd_functtype > functs;
 
-  //static...?
-  cmdstore()
-  {
-    add( #DOCMD, DOCMD );
-    add( #READVAR, READVAR );
-    add( #SETVAR, SETVAR );
-    add( #SUM, SUM );
-    add( #MULT, MULT );
-    add( #DIV, DIV );
-    add( #DIFF, DIFF );
-    add( #NEGATE, NEGATE );
-    add( #SUMFORALL, SUMFORALL );
-    add( #MULTFORALL, MULTFORALL );
-  }
 
-  void add( const string& s, cmd_functtype f )
+  cmdstore();
+
+  void add( const string& s, cmd_functtype& f )
   {
     functnames.push_back(s);
     functs.push_back(f);
@@ -139,26 +119,24 @@ struct cmdstore
   
 
   //REV: if it doesnt find it, it is a variable or a number
-  bool  findfunct( const string& s, cmd_functtype& f )
+  bool findfunct( const string& s, cmd_functtype& f ) const
   {
-
-    vector<string>::iterator it = std::find( functnames.begin(), functnames.end(), s );
-    if( it != functnames.end() )
+    //const vector<string>::iterator it = std::find( functnames.begin(), functnames.end(), s );
+    for(size_t x=0; x<functnames.size(); ++x)
       {
-	f = functs[ *it ];
-	return true;
+	if( functnames[x].compare( s ) == 0 )
+	  {
+	    f = functs[ x ];
+	    return true;
+	  }
       }
-    else
-      {
-	return false;
-      }
-    
+    return false;
   }
 
 
   //Parses just by commas, but leaves matching parens (i.e. functions) intact.
   //This is just a literal parse of inside of funct? Is there any point in this? Just use the remnants from fparse...
-  vector<string> doparse( const string& s )
+  vector<string> doparse( const string& s ) const
   {
     //JUST RUN MY PARSER HERE, only first level parse.
     auto f( std::begin( s ));
@@ -178,7 +156,7 @@ struct cmdstore
   }
   
   //parses function, i.e. expects only single FNAME( COMMA, ARGS )
-  vector<string> fparse( const string& s )
+  vector<string> fparse( const string& s ) const
   {
     //JUST RUN MY PARSER HERE, only first level parse.
     auto f( std::begin( s ));
@@ -225,7 +203,7 @@ struct updatefunct_t
   cmdstore cmds;
   std::shared_ptr<symmodel> model;
 
-  updatefunct_t( std::shared_ptr<symmodel>& m )
+  updatefunct_t( const std::shared_ptr<symmodel>& m )
   : model( m )
   {
   }
@@ -266,25 +244,12 @@ struct symmodel
   
   vector<symvar> vars;
     
-  //vector<symmodel> models;
   vector< std::shared_ptr<symmodel> > models;
   vector<string> modelnames;
   vector<string> modeltypes;
 
   vector<hole> holes;
-  //vector<string> holenames;
-  //vector<string> holetypes;
-
-
-  void addtype( const string& t )
-  {
-    //adds to type. Parses first.
-  }
   
-  //  static filesender* Create( const std::string& runtag, fake_system& _fakesys, const size_t& _wrkperrank , const bool& _todisk )
-  // {
-  //  filesender* fs = new filesender(_fakesys,  _wrkperrank, _todisk);
-  //}
 
   static std::shared_ptr<symmodel> Create( const string& s,  const string& t )
   {
@@ -293,7 +258,7 @@ struct symmodel
   }
   
 symmodel( const string& s, const string& t )
-: name( s), type( t )
+  : name( s), type( parsetypes( t ) )
   {
     updatefunct = updatefunct_t( shared_from_this() );
     addtypes( t );
@@ -314,7 +279,7 @@ symmodel( const string& s, const string& t )
     vector<string> parsed = parsetypes( t );
     for(size_t p=0; p<parsed.size(); ++p)
       {
-	type.push_back( paresed[p] );
+	type.push_back( parsed[p] );
       }
       
   }
@@ -327,7 +292,7 @@ symmodel( const string& s, const string& t )
     
     while( model )
       {
-	if( model == this )
+	if( model == shared_from_this() )
 	  {
 	    return true;
 	  }
@@ -350,7 +315,7 @@ symmodel( const string& s, const string& t )
     //not a pointer, I assume? Pushes a COPY of it?
     //SHIT
     //models.push_back( m );
-    models.puch_back( m );
+    models.push_back( m );
     modelnames.push_back( localname );
     modeltypes.push_back( localtype );
     models[ models.size() -1 ]->parent = shared_from_this(); //std::shared_ptr<symmodel>( this );
@@ -358,7 +323,8 @@ symmodel( const string& s, const string& t )
     //Literally add a (new) submodel to me. This may also be used to fill a hole, but this model "owns" the data.
   }
 
-  vector<hole> gethole( const string& h )
+  //REV; problem, this does not iterate inside models into hierch, i.e. MODEL/BLAH/HOLE
+  hole& gethole( const string& h )
   {
     //needs to recursively find the hole?
     vector<size_t> holeidx = find_hole( h );
@@ -421,11 +387,12 @@ symmodel( const string& s, const string& t )
     vector<string> parsed = hole;
     if( parsed.size() == 0 )
       {
-	fprintf(stderr, "ERROR in fillhole [%s], hole doesn't exist?\n", hole.c_str());
+	fprintf(stderr, "ERROR in fillhole, parsed size is zero, hole doesn't exist?\n"); //, hole.c_str());
       }
     else if( parsed.size() == 1 )
       {
-	vector<size_t> holeidxs = find_hole( hole );
+	string holename = parsed[0];
+	vector<size_t> holeidxs = find_hole( holename );
 	if(holeidxs.size() == 1 )
 	  {
 	    size_t holeidx = holeidxs[0];
@@ -434,7 +401,7 @@ symmodel( const string& s, const string& t )
 	  }
 	else
 	  {
-	    fprintf(stderr, "ERROR in fill hole, hole [%s] doesn't exist\n", hole.c_str());
+	    fprintf(stderr, "ERROR in fill hole, hole (holeidxs.size() != 1), [%s] doesn't exist\n", holename.c_str());
 	    exit(1);
 	  }
       }
@@ -474,7 +441,7 @@ symmodel( const string& s, const string& t )
   bool model_is_of_type( const string& t )
   {
     
-    vector<string> types = parsetype( t );
+    vector<string> types = parsetypes( t );
     for(size_t x=0; x<types.size(); ++x)
       {
 	bool found=false;
@@ -561,7 +528,7 @@ symmodel( const string& s, const string& t )
       {
 	string submodel = parsed[0];
 	vector<size_t> locs = find_model( submodel );
-	vector<size_t> hlocs = find_holes( submodel );
+	vector<size_t> hlocs = find_hole( submodel );
 	
 	if( locs.size() == 1 )
 	  {
@@ -689,7 +656,7 @@ symmodel( const string& s, const string& t )
     fprintf( stdout, "TYPES: ");
     for(size_t t=0; t<type.size(); ++t)
       {
-	fprintf(stdout, "[%s]", type[t] );
+	fprintf(stdout, "[%s]", type[t].c_str() );
       }
     fprintf(stdout, "\n");
 
@@ -705,7 +672,7 @@ symmodel( const string& s, const string& t )
 	for(size_t m=0; m<holes[h].members.size(); ++m)
 	  {
 	    prefixprint( depth );
-	    fprintf(stdout, "  [%lu]: [%s]\n", holes[h].members[m]->buildpath().c_str() );
+	    fprintf(stdout, "  [%lu]: [%s]\n", m, holes[h].members[m]->buildpath().c_str() );
 	  }
       }
 
