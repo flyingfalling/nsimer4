@@ -46,7 +46,7 @@ real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstor
       if( isnumer == false )
 	{
 	  //This will call recursively if fname is not local to model.
-	  retval = READVAR( fname, model, cmds);
+	  retval = READ( fname, model, cmds);
 	}
     }
   
@@ -54,7 +54,7 @@ real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstor
 }
 
 
-real_t READVAR( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg );
   //Set some "var_counter" in model to be read.
@@ -72,7 +72,7 @@ real_t READVAR( const string& arg, std::shared_ptr<symmodel>& model, const cmdst
 
 
 //REV ERROR is parsed[0] is not a variable!!
-real_t SETVAR( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 2 )
@@ -269,12 +269,13 @@ void hole::add( const std::shared_ptr<symmodel>& h )
 cmdstore::cmdstore()
   {
     ADDFUNCT( DOCMD );
-    ADDFUNCT( READVAR );
-    ADDFUNCT( SETVAR );
+    ADDFUNCT( READ );
+    ADDFUNCT( SET );
     ADDFUNCT( SUM );
     ADDFUNCT( MULT );
     ADDFUNCT( DIV );
     ADDFUNCT( DIFF );
+    ADDFUNCT( EXP );
     ADDFUNCT( NEGATE );
     ADDFUNCT( SUMFORALL );
     ADDFUNCT( MULTFORALL );

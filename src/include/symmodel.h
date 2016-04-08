@@ -184,8 +184,8 @@ struct cmdstore
 
 
 real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t READVAR( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t SETVAR( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
 real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
 real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
 real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
@@ -253,7 +253,15 @@ struct symmodel
 
   vector<hole> holes;
 
+  std::shared_ptr<symmodel> makederived( const string& _myname, const string& _mytypes )
+    {
+      auto newmodel = clone();
+      newmodel->name = _myname;
+      newmodel->addtypes( _mytypes );
 
+      return newmodel;
+    }
+  
   //REV: Whoa, ghetto. Better to have user make functions that "Derive" from it. But then...meh they're derived.
   //Make a shared pointer from my data, including all parent etc. reset
   std::shared_ptr<symmodel> clone()
@@ -313,7 +321,7 @@ struct symmodel
     updatefunct.model = shared_from_this();
   }
   
-  void add_line_to_updatefunct( const string& s )
+  void add_to_updatefunct( const string& s )
   {
     //If my updatefunct is still null
     if( !updatefunct.model )

@@ -52,24 +52,23 @@ namespace fparser
     //I could do it with nested parse lol...
     stringform = (
 		   qi::repeat(0, 1)
-		   [fname
-		  >>
-		  *(
-		    char_('(')
-		    >>
-		    stringform
+		   [
+		    fname
 		    >>
 		    *(
-		      char_(',')
+		      char_('(')
 		      >>
 		      stringform
+		      >>
+		      *(
+			char_(',')
+			>>
+			stringform
+			)
+		      >>
+		      char_(')')
 		      )
-		    >>
-		    char_(')')
-		    )
-			
-		  
-		   ]
+		    ]
 		  );
 
 
@@ -77,7 +76,8 @@ namespace fparser
     //Am I required to have parens? I guess I can have "optinal" parens ;0
     //How do I tell it to go "until it ends"?
     fname = (
-	     lexeme[+(char_ - '(' - ')' - ',')]
+	     //lexeme[+(char_ - '(' - ')' - ',')]
+	     +(char_ - '(' - ')' - ',')
 	     );
 
     //A stringform simply returns itself. It only reads up until ) basically (if it had an opener)
@@ -134,24 +134,23 @@ namespace fparser
 		   );
     
     stringform = (
-		   qi::repeat(0, 1)
-		   [fname
-		  >>
-		  *(
-		    char_('(')
-		    >>
-		    stringform
-		    >>
-		    *(
-		      char_(',')
-		      >>
-		      stringform
-		      )
-		    >>
-		    char_(')')
-		    )
-			
-		  
+		  qi::repeat(0, 1)
+		  [
+		   fname
+		   >>
+		   *(
+		     char_('(')
+		     >>
+		     stringform
+		     >>
+		     *(
+		       char_(',')
+		       >>
+		       stringform
+		       )
+		     >>
+		     char_(')')
+		     )
 		   ]
 		  );
 
@@ -162,7 +161,8 @@ namespace fparser
     //Am I required to have parens? I guess I can have "optinal" parens ;0
     //How do I tell it to go "until it ends"?
     fname = (
-	     lexeme[+(char_ - '(' - ')' - ',')]
+	     //lexeme[+(char_ - '(' - ')' - ',')]
+	     +(char_ - '(' - ')' - ',')
 	     );
 
   }
