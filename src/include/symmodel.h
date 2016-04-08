@@ -1,3 +1,13 @@
+//REV: insteresting problem, since I am making "types" (items) it is literally getting a pointer to it rather than copying it.
+//If I just had an object, it would do the full object copy.
+//So, either I need the "constructor" for the object instances to build the appropriate structure
+//E.g. BUILD_ADEX( xxx ), which makes a new symmodel with correct submodels
+//*OR* I need to have a deep-copy constructor, which not only copies, but also constructs new instances of all submodels?
+//In other words, recursively call "deep copy"
+//How will that work? When I call it, will the vector<symmodelptr> also deep copy same "pointer" locations, or will it make a new xyzpos etc.?
+
+//Note, when it goes and constructs the "children", it needs to set to me.
+
 
 #pragma once
 
@@ -220,7 +230,8 @@ struct updatefunct_t
 
 
 
-//That is a pain in the fucking ASS
+//Normal equals constructors are POINTER equal, i.e. just get pointer to it.
+//Only in case of "addmodel" do we invoke DEEP COPY.
 struct symmodel
   :
   public std::enable_shared_from_this<symmodel>
@@ -230,29 +241,70 @@ struct symmodel
 
   std::shared_ptr<symmodel> parent;
   
-  string name;
+  string name="__ERROR_MODEL_NAME_UNSET";
+  string localname="__ERROR_MODEL_LOCALNAME_UNSET";
   vector<string> type;
   
   vector<symvar> vars;
     
   vector< std::shared_ptr<symmodel> > models;
-  vector<string> modelnames;
-  vector<string> modeltypes;
+  //vector<string> modelnames;
+  //vector<string> modeltypes;
 
   vector<hole> holes;
-  
 
-  static std::shared_ptr<symmodel> Create( const string& s,  const string& t )
+
+  //REV: Whoa, ghetto. Better to have user make functions that "Derive" from it. But then...meh they're derived.
+  //Make a shared pointer from my data, including all parent etc. reset
+  std::shared_ptr<symmodel> clone()
   {
-    //REV: haha this will actually work? Don't need to make stack object symmodel tmp(s, t)?
-    return std::make_shared<symmodel>( s, t );
+    //Whoa, ghetto copy of object DATA. Will do deep copy to get contained pointed to data.
+    auto newmodel = std::make_shared<symmodel>( *(shared_from_this()) );
+
+    //Overwrite new stuff by making new recursively.
+    //updatefunct is same
+    newmodel->parent.reset();
+    //name is same
+    newmodel->localname="__ERROR_MODEL_LOCALNAME_UNSET";
+    //type is same
+
+    vector<std::shared_ptr<symmodel>> oldsubmodels = newmodel->models;
+    newmodel->models.clear();
+    
+    for(size_t m=0; m<oldsubmodels.size(); ++m )
+      {
+	//REV: These are model pointers to OLD model locations. I need to do a deep copy for each one.
+	auto newsub = oldsubmodels[m]->clone();
+
+	newmodel->models.push_back( newsub );
+	
+	newsub->parent = newmodel;
+	newsub->localname = oldsubmodels[m]->localname;
+      }
+
+    //holes are copied, but hole MEMBERS are not.
+    //newmodel->holes.clear();
+    for(size_t h=0; h<newmodel->holes.size(); ++h)
+      {
+	newmodel->holes[h].parent = newmodel;
+	newmodel->holes[h].members.clear();
+	newmodel->holes[h].external.clear();
+      }
+
+    return newmodel;
   }
   
-symmodel( const string& s, const string& t )
-  : name( s), type( parsetypes( t ) )
+  static std::shared_ptr<symmodel> Create( const string& s,  const string& t, const string& lname="__ERROR_MODEL_LOCALNAME_UNSET" )
+  {
+    //REV: haha this will actually work? Don't need to make stack object symmodel tmp(s, t)?
+    return std::make_shared<symmodel>( s, t, lname );
+  }
+  
+ symmodel( const string& s, const string& t, const string& lname )
+   : name( s), type( parsetypes( t ) ), localname( lname )
   {
     //updatefunct = updatefunct_t( shared_from_this() );
-    addtypes( t );
+    //addtypes( t );
   }
 
   void set_updatefunct( const updatefunct_t& uf )
@@ -318,7 +370,10 @@ symmodel( const string& s, const string& t )
   //When I specify var...yea it's just single thing.
   //Can holes be for variables too? Or are they model holes? Separate holes? Make all holes just variables? No, models...
   //We need to know when to update. If we only reference variables, we don't know when they've been updated. They must only be parameters?
-  void addmodel( const std::shared_ptr<symmodel>& m, const string& localname, const string& localtype )
+
+  
+  
+  void addmodel( const std::shared_ptr<symmodel>& m, const string& _localname )
   {
     //not a pointer, I assume? Pushes a COPY of it?
     //SHIT
@@ -327,18 +382,18 @@ symmodel( const string& s, const string& t )
     //REV: need to get what would be the containing model! Then push it.
 
     string newmodelname;
-    auto realmodel = get_containing_model( localname, newmodelname );
 
-    realmodel->models.push_back( m );
-    realmodel->modelnames.push_back( newmodelname );
-    realmodel->modeltypes.push_back( localtype );
-    m->parent = realmodel;
-    //models.push_back( m );
-    //modelnames.push_back( localname );
-    //modeltypes.push_back( localtype );
-    //models[ models.size() -1 ]->parent = shared_from_this(); //std::shared_ptr<symmodel>( this );
+    //REV: Ah, get containing model will return what? Localname will just be gL.
+    //So, containing model should be "this"
+    auto realmodel = get_containing_model( _localname, newmodelname );
+
+    auto modelclone = m->clone();
     
-    //Literally add a (new) submodel to me. This may also be used to fill a hole, but this model "owns" the data.
+    realmodel->models.push_back( modelclone );
+  
+    modelclone->parent = realmodel;
+    modelclone->localname = newmodelname;
+  
   }
 
   //REV; problem, this does not iterate inside models into hierch, i.e. MODEL/BLAH/HOLE
@@ -376,7 +431,8 @@ symmodel( const string& s, const string& t )
     for(size_t n=0; n<models.size(); ++n )
       {
 	//if( models[n]->name.compare( h ) == 0 )
-	if( modelnames[n].compare( h ) == 0 )
+	//if( modelnames[n].compare( h ) == 0 )
+	if( models[n]->localname.compare(h) == 0 )
 	  {
 	    r.push_back(n);
 	  }
@@ -420,7 +476,7 @@ symmodel( const string& s, const string& t )
 	  }
 	else
 	  {
-	    fprintf(stderr, "ERROR in fill hole, hole (holeidxs.size() != 1), [%s] doesn't exist (in model [%s])\n", holename.c_str(), name.c_str());
+	    fprintf(stderr, "ERROR in fill hole, hole (holeidxs.size() != 1), [%s] doesn't exist (in model [%s])\n", holename.c_str(), localname.c_str());
 	    exit(1);
 	  }
       }
@@ -536,6 +592,15 @@ symmodel( const string& s, const string& t )
     return get_model( parsed );
   }
 
+  void enum_sub_models()
+  {
+    fprintf(stderr, "--Submodels of model [%s]\n", localname.c_str() );
+    for(size_t m=0; m<models.size(); ++m)
+      {
+	fprintf(stdout, "[%s] (modelname [%s])\n", models[m]->localname.c_str(), models[m]->name.c_str() );
+      }
+  }
+  
   //REV: This finds "variable" inside a model? Or it finds model?
   std::shared_ptr<symmodel> get_model( const vector<string>& parsed )
   {
@@ -549,8 +614,13 @@ symmodel( const string& s, const string& t )
 	vector<size_t> locs = find_model( submodel );
 	vector<size_t> hlocs = find_hole( submodel );
 	
-	if( locs.size() == 1 )
+	if( locs.size() >= 1 )
 	  {
+	    if(locs.size() > 1 )
+	      {
+		fprintf(stderr, "WTf found more than one [%s]\n", submodel.c_str() );
+		exit(1);
+	      }
 	    size_t mloc = locs[0];
 	    
 	    //Strip off the first part.
@@ -576,7 +646,8 @@ symmodel( const string& s, const string& t )
 	  }
 	else
 	  {
-	    fprintf(stderr, "REV: get_model, find model, model doesn't exist...[%s]\n", parsed[0].c_str());
+	    fprintf(stderr, "REV: get_model, find model, model doesn't exist...[%s] (local model [%s])\n", submodel.c_str(), localname.c_str());
+	    enum_sub_models();
 	    exit(1);
 	  }
       }
@@ -640,12 +711,12 @@ symmodel( const string& s, const string& t )
   string buildpath( )
   {
     vector<string> path;
-    path.push_back( name );
+    path.push_back( localname );
     
     std::shared_ptr<symmodel> model = parent;
     while( model )
       {
-	path.push_back( model->name );
+	path.push_back( model->localname );
 	model = model->parent;
       }
 
@@ -668,8 +739,9 @@ symmodel( const string& s, const string& t )
   //All holes which are filled by models, have their global scope printed too.
   void check_and_enumerate( size_t depth = 0 )
   {
+    fprintf(stdout, "\n");
     prefixprint( depth );
-    fprintf( stdout, "\nMODEL [%s]\n", name.c_str() );
+    fprintf( stdout, "MODEL [%s] (modelnametype [%s])\n", localname.c_str(), name.c_str() );
 
     prefixprint( depth );
     fprintf( stdout, "=TYPES: ");

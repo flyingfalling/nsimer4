@@ -45,9 +45,8 @@ void test_build()
   adex->addhole( "postsyn" );
   adex->addhole( "presyn" );
 
-  adex->addmodel( gLeak, "gL", "" );
-
-  adex->addmodel( pos3d, "position", "" );
+  adex->addmodel( gLeak, "gL" );
+  adex->addmodel( pos3d, "position"  );
   
   auto Iinj = symmodel::Create( "Iinj", "current" );
   Iinj->addvar( "I", "current|uA" );
@@ -77,15 +76,15 @@ void test_build()
 
   //This is an empty model. Need to know "root" of my reference in order to get it. There must always be a path...so that's fine...
   //Updates all of neuron type, then updates all of synapse type, etc.? No, there is no "explicitly update model X", it is all implicit... So this has no update function.
-  auto sc = symmodel::Create("sc", "circuit");
+  auto sc = symmodel::Create("sc", "circuit", "sc1");
 
   //Neurons and synapses are "holes"? They're just types haha.
   //Only vars and holes can be referenced directly...? Nah, models can too, they are just "variables" of this model...? Shit. How to update?
   //All models are updated...
-  sc->addmodel( adex, "adex1", "" ); //Has no specific "local functions"
-  sc->addmodel( adex, "adex2", "" );
-  sc->addmodel( spksyn, "syn2-1", "" );
-  sc->addmodel( spksyn, "syn1-1", "" ); //Specify type of synapse? Or might have different receptor to each postsyn target?
+  sc->addmodel( adex, "adex1" ); //Has no specific "local functions"
+  sc->addmodel( adex, "adex2" );
+  sc->addmodel( spksyn, "syn2-1" );
+  sc->addmodel( spksyn, "syn1-1" ); //Specify type of synapse? Or might have different receptor to each postsyn target?
 
   //sc->connect( "syn2-1", "adex1" );
   //sc->connect( "adex2", "syn2-1" );
@@ -95,11 +94,11 @@ void test_build()
   //Where do I want to put the conductances? They should be where they are "size"
   //Best way is to add as postsyn, and "force" all presyn guys to add the right thing for me (how do I know when to do this?). In other words, if I add gNMDA, all presyn guys
   //know to automatically add variable for it.
-  sc->addmodel( gAMPA, "adex1/gAMPA1", "" );
-  sc->addmodel( gNMDA, "adex1/gNMDA1", "" );
+  sc->addmodel( gAMPA, "adex1/gAMPA1" );
+  sc->addmodel( gNMDA, "adex1/gNMDA1" );
 
 
-  sc->addmodel( Iinj, "adex1/Iinj1", "" );
+  sc->addmodel( Iinj, "adex1/Iinj1" );
   sc->fillhole( "adex1/currents", "adex1/Iinj1" );
 
   sc->fillhole( "adex1/conductances", "adex1/gL" );
@@ -126,9 +125,6 @@ void test_build()
   sc->fillhole( "syn2-1/postsyn-conductances", "adex1/gNMDA1" );
 
 
-
-
-  sc->fillhole( "adex1/conductances", "adex1/gL" );
   sc->fillhole( "adex2/gL/membrane", "adex2" );
 
 
