@@ -16,7 +16,7 @@ vector<string> parsetypes( const string& name)
 }
 
 
-real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
@@ -37,7 +37,7 @@ real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstor
   real_t retval;
   if( found )
     {
-      retval = execfunct( newarg, model, cmds );
+      retval = execfunct( newarg, model, cmds, myidx );
     }
   else
     {
@@ -46,7 +46,7 @@ real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstor
       if( isnumer == false )
 	{
 	  //This will call recursively if fname is not local to model.
-	  retval = READ( fname, model, cmds);
+	  retval = READ( fname, model, cmds, myidx);
 	}
     }
   
@@ -69,7 +69,7 @@ real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstor
 //Which means all variables must pass the index through ;)
 //"MODEL" is the model I am "calling" from (?)
 //In which case it might go inside a "sub" (hole) different model at some point. In which case, index basis will change.
-real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   //This parses into variable name!!!
   vector<string> parsed = cmds.doparse( arg );
@@ -118,7 +118,7 @@ real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore
 
 
 //REV ERROR is parsed[0] is not a variable!!
-real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 2 )
@@ -129,7 +129,7 @@ real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore&
   
   
   string toexec = parsed[1];
-  real_t val = DOCMD( toexec, model, cmds );
+  real_t val = DOCMD( toexec, model, cmds, myidx );
 
   string varname = parsed[0];
 
@@ -150,7 +150,7 @@ real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore&
 
 
 //Easier to just make sure it's 2...
-real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
@@ -160,7 +160,7 @@ real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore&
   for( size_t tosum=0; tosum<parsed.size(); ++tosum)
     {
       string toexec = parsed[tosum];
-      val += DOCMD( toexec, model, cmds );
+      val += DOCMD( toexec, model, cmds, myidx );
     }
 
   return val;
@@ -168,7 +168,7 @@ real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore&
 
 
 //product
-real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
@@ -179,14 +179,14 @@ real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore
   for( size_t tosum=0; tosum<parsed.size(); ++tosum)
     {
       string toexec = parsed[tosum];
-      val *= DOCMD( toexec, model, cmds );
+      val *= DOCMD( toexec, model, cmds, myidx );
     }
 
   return val;
 }
 
 //div
-real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
@@ -194,19 +194,19 @@ real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore&
 
   string toexec = parsed[0];
 
-  real_t val=DOCMD( toexec, model, cmds );
+  real_t val=DOCMD( toexec, model, cmds, myidx );
   
   for( size_t tosum=1; tosum<parsed.size(); ++tosum)
     {
       toexec = parsed[tosum];
-      val /= DOCMD( toexec, model, cmds );
+      val /= DOCMD( toexec, model, cmds, myidx );
     }
 
   return val;
 }
 
 //subtract
-real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   //subtract all from first one?
   vector<string> parsed = cmds.doparse( arg );
@@ -214,36 +214,36 @@ real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore
     { exit(1); }
 
   string toexec = parsed[0];
-  real_t val=DOCMD( toexec, model, cmds );
+  real_t val=DOCMD( toexec, model, cmds, myidx );
   for( size_t tosum=1; tosum<parsed.size(); ++tosum)
     {
       toexec = parsed[tosum];
-      val -= DOCMD( toexec, model, cmds );
+      val -= DOCMD( toexec, model, cmds, myidx );
     }
   
   return val;
 }
 
 
-real_t NEGATE( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t NEGATE( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     { exit(1); }
 
   string toexec = parsed[0];
-  real_t val= DOCMD( toexec, model, cmds );
+  real_t val= DOCMD( toexec, model, cmds, myidx );
   return (-1.0 * val);
 }
 
-real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     { exit(1); }
 
   string toexec = parsed[0];
-  real_t val = DOCMD( toexec, model, cmds );
+  real_t val = DOCMD( toexec, model, cmds, myidx );
 
   return exp( val );
 }
@@ -255,7 +255,7 @@ real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore&
 //Although holes contain multiple, which we know. We could do like a "for all by type", which is basically what currents are?
 //Note, some current/cond models might be LOCAL, others foreign?
 //I guess, in this case, all local...? Shit.
-real_t SUMFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t SUMFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
 
@@ -271,13 +271,13 @@ real_t SUMFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmd
   for( size_t h=0; h<myhole.members.size(); ++h)
     {
       std::shared_ptr<symmodel> holemod = myhole.members[h];
-      val += DOCMD( toexec, holemod, cmds ); //does DOCMD return a real_t val? Fuck...
+      val += DOCMD( toexec, holemod, cmds, myidx ); //does DOCMD return a real_t val? Fuck...
     }
   return val;
 }
 
 //How to deal with numerals? Just parse them as base vectors...
-real_t MULTFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+real_t MULTFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 {
   vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
 
@@ -293,7 +293,7 @@ real_t MULTFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cm
   for( size_t h=0; h<myhole.members.size(); ++h)
     {
       std::shared_ptr<symmodel> holemod = myhole.members[h];
-      val *= DOCMD( toexec, holemod, cmds ); //does DOCMD return a real_t val? Fuck...
+      val *= DOCMD( toexec, holemod, cmds, myidx ); //does DOCMD return a real_t val? Fuck...
     }
   
   return val;

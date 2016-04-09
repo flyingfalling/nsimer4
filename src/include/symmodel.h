@@ -20,6 +20,21 @@
 
 
 
+//OK, now I get corresopndences when I read/write variables.
+//However, final problem is to actually use the correspondence.
+//To use it, I must know
+//1) index in "calling" model
+
+//That is all?
+//I.e. in 'actual' updates, I use an index to call with, but don't care what it is haha.
+//Normally, I execute "for all members in model".
+//It only matters for "read/write" variables.
+//Oh shit, I could literally make a symmodel for every? Nah.
+//Which has its own id? haha...
+//No, just pass it through.
+
+
+
 #pragma once
 
 #include <commontypes.h>
@@ -42,7 +57,7 @@ using std::string;
 struct symmodel;
 struct cmdstore;
 
-typedef std::function< real_t( const string&, std::shared_ptr<symmodel>&, const cmdstore& ) > cmd_functtype;
+typedef std::function< real_t( const string&, std::shared_ptr<symmodel>&, const cmdstore&, const size_t& ) > cmd_functtype;
 
 
 vector<string> parse( const string& name);
@@ -193,19 +208,31 @@ struct cmdstore
 
 
 
+#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 
+FUNCDECL( DOCMD );
+FUNCDECL(READ);
+FUNCDECL(SET);
+FUNCDECL(SUM);
+FUNCDECL(MULT);
+FUNCDECL(DIV);
+FUNCDECL(DIFF);
+FUNCDECL(NEGATE);
+FUNCDECL(EXP);
+FUNCDECL(SUMFORALL);
+FUNCDECL(MULTFORALL);
 
-real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t NEGATE( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t SUMFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-real_t MULTFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t NEGATE( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t SUMFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
+//real_t MULTFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
 
 
 
@@ -231,11 +258,11 @@ struct updatefunct_t
     lines.push_back( s );
   }
 
-  void execute()
+  void execute( const size_t& myidx )
   {
     for(size_t c=0; c<lines.size(); ++c)
       {
-	DOCMD( lines[c], model, cmds );
+	DOCMD( lines[c], model, cmds, myidx );
       }
   }
 };
@@ -395,11 +422,6 @@ struct symmodel
 	thistop->correspondences.push_back( std::make_shared<conn_corresp>( targtop ) );
       }
   } //end addcoresp
-  
-  //Gets the correspondence from me to the model (represented by?) targ? As a symmodel ptr. Nah give it string...
-  //Returns index of correspondence? Or adds it if it doesn't exist?
-
-  //Returns something useful, basically a struct/function that gives
   
   bool getcorresp( const symvar& s, std::shared_ptr<corresp>& c )
   {
@@ -918,7 +940,7 @@ struct symmodel
   {
     //literally runs it and tries to read each variable ;)
     //If it can't find it, it exits...
-    updatefunct.execute();
+    updatefunct.execute( 0 );
   }
 
   string buildpath( )
