@@ -54,8 +54,24 @@ real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstor
 }
 
 
+//REV: this is "fake" read...I want to compile it into a "real" read, which requires actually looking at correspondence! :)
+//If correspondences are not made yet, then whatever?
+//So, yea, they should take "symvar" after all ;)
+//Which variable I "read" will depend on my "local idx" in the model (i.e. what is my thread?)
+//Can I pass that? I.e. in reality it will iterate each one in turn, calling "model" with "index in model".
+//Literally a for loop through the model indexes? :) Calling update function.
+//Need to check variable update dependencies to know if we need to automatically generate new variables?
+
+//REV: I am making this over-complex. But, I don't want to "reprogram" these, so better to have it actually access
+//the variable with offset, based on calling model?
+//But, I'm making it do too many things. Best idea is to have differnet structs to do the actual lookup etc.
+//Problem is that, it always must know member index in it?
+//Which means all variables must pass the index through ;)
+//"MODEL" is the model I am "calling" from (?)
+//In which case it might go inside a "sub" (hole) different model at some point. In which case, index basis will change.
 real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 {
+  //This parses into variable name!!!
   vector<string> parsed = cmds.doparse( arg );
   //Set some "var_counter" in model to be read.
   if( parsed.size() != 1 )
@@ -63,9 +79,39 @@ real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore
       exit(1);
     }
 
+  //May still be blah/blah/blah
+  string varname = parsed[0];
+
+  //"I" am the reading model. SO, I need to do model ->get
+  std::shared_ptr<corresp> c;
+  bool gotcorresp = model->getcorresp( model->readvar( varname ), c );
+  if( !gotcorresp )
+    {
+      fprintf(stderr, "REV: in READ, error, could not get correspondence of varname [%s] from model [%s]\n", varname.c_str(), model->buildpath().c_str());
+      exit(1);
+    }
+  //symvar& v = model->readvar( varname );
+  
   //REV: HERE -- at model.getvar, we need to recursively search
   //This will do the recursive search
-  real_t val = model->readvar( parsed[0] ).valu;
+  //This is a dummy call!
+  real_t val;
+  if( model->readvar( varname ).valu.size() == 0 )
+    {
+      val = 0;
+    }
+  else //this is a real call!
+    {
+      size_t idx = 0; //is idx of calling guy?
+      
+      //Need to like "get nth guy", or need to "for all guys, do x"? Where it will use an iterator variable?
+      //Whenever you read a variable, you need to make sure that you are going through the correct correspondence? At each point, it will go through a "correspondence"
+      //REV; FUCK FUCK FUCK problem is if we go "through" hole, then "back" it will go many-to-one one way (which is fine), but then when I go "back", it won't know
+      //which one of the many was the original one I accessed? So I need to keep an index variable to remember all models what my index in that model was?
+      //Like, a model "trace"
+      //This is final problem I need to solve...which is how/what index to pass with?
+      //val = get_via_corresp( model->readvar( parsed[0] ), idx) );
+    }
   
   return val;
 }
@@ -80,11 +126,24 @@ real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore&
       exit(1);
     }
 
+  
+  
   string toexec = parsed[1];
   real_t val = DOCMD( toexec, model, cmds );
 
+  string varname = parsed[0];
+
+  //"I" am the reading model. SO, I need to do model ->get
+  std::shared_ptr<corresp> c;
+  bool gotcorresp = model->getcorresp( model->getvar( varname ), c );
+  if( !gotcorresp )
+    {
+      fprintf(stderr, "REV: in SET, error, could not get correspondence of varname [%s] from model [%s]\n", varname.c_str(), model->buildpath().c_str());
+      exit(1);
+    }
+  
   //Could have been read and set separately?
-  model->setvar( parsed[0], val );
+  model->setvar( varname, val );
   
   return 0;
 }

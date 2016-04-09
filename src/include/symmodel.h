@@ -9,6 +9,17 @@
 //Note, when it goes and constructs the "children", it needs to set to me.
 
 
+
+//REV: At any rate, first, make sure that all correspondences are checked ;)
+//How about for "recursive" access of guys? Will that ever happen?
+
+
+//OK, finally, now whenever I am accessing a variable, I always access it VIA CORRESPONDENCE. Problem is, it goes "my model" to "its model". Am I "inside" a model now?
+//The only time it should matter, is when I am accessing via holes. If I access it directly, it is literally an identity. So, I always, when I read a variable, will
+//access it via model->getcorresp( get_containing_model( targvarname ) )
+
+
+
 #pragma once
 
 #include <commontypes.h>
@@ -43,7 +54,8 @@ struct symvar
   string name;
   string type;
   
-  real_t valu;
+  //real_t valu;
+  std::vector<real_t> valu;
   
   size_t read=false;
   size_t written=false;
@@ -229,6 +241,114 @@ struct updatefunct_t
 };
 
 
+//REV: what to do when I make a circuit a submodel of another? Is it possible?
+//I guess. So, I guess all guys only go up until there is some "top model" type guy, which is different type or has a flag set.
+
+struct corresp
+{
+  std::shared_ptr<symmodel> targmodel;
+
+  corresp()
+  {
+  }
+
+  corresp( const std::shared_ptr<symmodel>& t)
+  : targmodel( t )
+  {
+  }
+
+  virtual vector<size_t> get( const size_t& s ) = 0;
+  virtual vector<real_t> getvar( const size_t& s, const symvar& var ) = 0;
+};
+
+
+//Are they re-ordered? Possibly...same size?
+//ONLY LOCAL MODELS SET, SO EVERYTHING ELSE IS A READ!! :)
+struct identity_corresp : public corresp
+{
+  vector<size_t> get( const size_t& s )
+  {
+    return vector<size_t>(1, s);
+  }
+
+  //size_t getvar( const size_t& s, const std::vector<real_t>& var )
+  vector<real_t> getvar( const size_t& s, const symvar& var )
+  {
+    //size_t idx = get(s); //REV: no need, it's identity.
+    if( s >= var.valu.size() )
+      {
+	fprintf(stderr, "In identity corresp, error s > var size\n");
+	exit(1);
+      }
+
+    return vector<real_t>(1, var.valu[s] );
+  }
+
+  identity_corresp( const std::shared_ptr<symmodel>& targ )
+    :
+  corresp( targ )
+    {
+      
+    }
+};
+
+//const identity_corresp IDENTITY;
+
+
+struct conn_corresp : public corresp
+{
+  //Need to code this
+  std::vector<size_t> get( const size_t& s )
+  {
+    if( s >= startidx.size() )
+      {
+	fprintf(stderr, "ERROR in get in conn_corresp, s >= startidx size\n");
+	exit(1);
+      }
+    
+    size_t start = startidx[s];
+    size_t size = numidx[s];
+    return std::vector<size_t>( correspondence.begin()+start, correspondence.begin()+start+size);
+  }
+
+  //std::vector<real_t> getvar( const size_t& s, const std::vector<real_t>& var )
+  std::vector<real_t> getvar( const size_t& s, const symvar& var )
+  {
+    
+    std::vector<size_t> myidxs = get( s );
+    std::vector<real_t> ret( myidxs.size() );
+    for( size_t x=0; x<myidxs.size(); ++x )
+      {
+	if( myidxs[x] >= correspondence.size() )
+	  {
+	    fprintf(stderr, "REV: error, myidxs x > correspondences array size\n");
+	    exit(1);
+	  }
+	
+	size_t targ = correspondence[ myidxs[x] ];
+	if( targ >= var.valu.size() )
+	  {
+	    fprintf(stderr, "REV: error, targ idx > var array size\n");
+	    exit(1);
+	  }
+	
+	
+	ret[x] = var.valu[ targ ];
+      }
+
+    return ret;
+  }
+  
+ conn_corresp( const std::shared_ptr<symmodel>& targ )
+   : corresp( targ )
+  {
+  }
+  
+  std::vector<size_t> startidx;
+  std::vector<size_t> numidx;
+  std::vector<size_t> correspondence;
+};
+
 
 //Normal equals constructors are POINTER equal, i.e. just get pointer to it.
 //Only in case of "addmodel" do we invoke DEEP COPY.
@@ -253,6 +373,74 @@ struct symmodel
 
   vector<hole> holes;
 
+  std::vector< std::shared_ptr<corresp> > correspondences;
+  
+  
+  //Check that this is not top level?
+  //When 'adding' hole, (holes are never added from holes)
+  //we directly check corresp, and add if it doesn't exist.
+  //What to do for "same" guys? It will return false, but return nothing? Shit.
+  //Always returns "identity"? Which is a "type" of derived correspodnence? Fuck?!
+  void addcorresp( const std::shared_ptr<symmodel>& targ )
+  {
+    //check that it does not exist, and add only if it does not.
+    //Only operates on "top level" models!!
+    std::shared_ptr<corresp> tmp;
+    bool exists = getcorresp( targ, tmp );
+    
+    if( !exists )
+      {
+	std::shared_ptr<symmodel> thistop = get_toplevel_model();
+	std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
+	thistop->correspondences.push_back( std::make_shared<conn_corresp>( targtop ) );
+      }
+  } //end addcoresp
+  
+  //Gets the correspondence from me to the model (represented by?) targ? As a symmodel ptr. Nah give it string...
+  //Returns index of correspondence? Or adds it if it doesn't exist?
+
+  //Returns something useful, basically a struct/function that gives
+  
+  bool getcorresp( const symvar& s, std::shared_ptr<corresp>& c )
+  {
+    return getcorresp( s.parent, c );
+  }
+  
+  bool getcorresp( const std::shared_ptr<symmodel>& targ, std::shared_ptr<corresp>& c )
+    {
+      std::shared_ptr<symmodel> thistop = get_toplevel_model();
+      std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
+      
+      if( thistop == targtop )
+	{
+	  c = std::make_shared<identity_corresp>( targtop );
+	  return true; //it will try to add it? Fuck...
+	}
+      for(size_t x=0; x<thistop->correspondences.size(); ++x)
+	{
+	  if( thistop->correspondences[x]->targmodel == targtop )
+	    {
+	      c = thistop->correspondences[x];
+	      return true;
+	    }
+	}
+      return false;
+    } //end getcorresp
+  
+  std::shared_ptr<symmodel> get_toplevel_model()
+    {
+      if( parent && parent->parent )
+	{
+	  return parent->get_toplevel_model();
+	}
+      else
+	{
+	  return shared_from_this();
+	}
+    }
+  
+  
+  
   std::shared_ptr<symmodel> makederived( const string& _myname, const string& _mytypes )
     {
       auto newmodel = clone();
@@ -419,7 +607,8 @@ struct symmodel
 	exit(1);
       }
   }
-  
+
+
   vector<size_t> find_hole( const string& h )
   {
     vector<size_t> r;
@@ -465,6 +654,8 @@ struct symmodel
   }
   
 
+  //REV: Only DIRECTLY FILLS *THIS* specified model! I.e. does not "look up the hierarchy" for the hole to fill.
+  //
   void fillhole( const vector<string>& h, const std::shared_ptr<symmodel>& modeltofillwith )
   {
     vector<string> parsed = h;
@@ -481,17 +672,22 @@ struct symmodel
 	    size_t holeidx = holeidxs[0];
 	    //fill it
 	    holes[ holeidx ].add( modeltofillwith );
+
+	    //REV: ADD CORRESP FROM THIS
+	    addcorresp( modeltofillwith ); //or I could have lots of corresp pointers sitting around...
 	  }
 	else
 	  {
+	    //REV: Ugh, keep around what the starting point was?
 	    fprintf(stderr, "ERROR in fill hole, hole (holeidxs.size() != 1), [%s] doesn't exist (in model [%s])\n", holename.c_str(), localname.c_str());
 	    exit(1);
+	    
 	  }
       }
     else
       {
 	string submodel = parsed[0];
-	vector<size_t> locs = find_model( submodel );
+	vector<size_t> locs = find_model( submodel ); //REV: this will "look up the hierarchy" fuck...
 	
 	if(locs.size() == 1)
 	  {
@@ -499,7 +695,7 @@ struct symmodel
 	    parsed.erase( parsed.begin() );
 	    
 	    models[ mloc ]->fillhole( parsed, modeltofillwith );
-
+	    
 	  }
 	else
 	  {
@@ -575,7 +771,7 @@ struct symmodel
     
     //Search models of target model, for those of TYPE, and fill hole.
   }
-
+  
   
 
   //REV: search for hole too?
@@ -610,6 +806,7 @@ struct symmodel
   }
   
   //REV: This finds "variable" inside a model? Or it finds model?
+  //REV; This "BUBBLES" all the way up to root! Note, it should only bubble to root-1
   std::shared_ptr<symmodel> get_model( const vector<string>& parsed )
   {
     if( parsed.size() == 0 ) //< 1 )
@@ -621,6 +818,7 @@ struct symmodel
 	string submodel = parsed[0];
 	vector<size_t> locs = find_model( submodel );
 	vector<size_t> hlocs = find_hole( submodel );
+	vector<string> nparsed( parsed.begin()+1, parsed.end() );
 	
 	if( locs.size() >= 1 )
 	  {
@@ -631,19 +829,12 @@ struct symmodel
 	      }
 	    size_t mloc = locs[0];
 	    
-	    //Strip off the first part.
-	    //parsed.erase( parsed.begin() );
-	    vector<string> nparsed( parsed.begin()+1, parsed.end() );
 	    return ( models[ mloc ]->get_model( nparsed ) );
 	  }
 	else if( hlocs.size() == 1 )
 	  {
 	    size_t hloc = hlocs[0];
 	    
-	    //Strip off the first part.
-	    //parsed.erase( parsed.begin() );
-	    vector<string> nparsed( parsed.begin()+1, parsed.end() );
-	    //return ( models[ mloc ].get_model( nparsed ) );
 	    if( holes[ hloc ].members.size() != 1 )
 	      {
 		fprintf(stderr, "ERROR in get_model, getting [%s] from HOLE, but hole [%s] has size [%lu], but it should be 1\n", submodel.c_str(), holes[hloc].name.c_str(), holes[hloc].members.size() );
@@ -654,9 +845,23 @@ struct symmodel
 	  }
 	else
 	  {
-	    fprintf(stderr, "REV: get_model, find model, model doesn't exist...[%s] (local model [%s])\n", submodel.c_str(), localname.c_str());
-	    enum_sub_models();
-	    exit(1);
+	    //Go up and redo.
+	    //If root, stop
+	    if( parent && !(parent->parent))
+	      {
+		fprintf(stderr, "REV: get_model, find model, model doesn't exist...[%s] (local model [%s]) (NOTE BUBBLED UP WHOLE HIERARCHY)\n", submodel.c_str(), localname.c_str());
+		enum_sub_models();
+		exit(1);
+	      }
+	    else if( parent && parent->parent )
+	      {
+		parent->get_model( nparsed );
+	      }
+	    else
+	      {
+		fprintf(stderr, "Whoa, weird thing, parent->parent but not parent? Or something?\n");
+		exit(1);
+	      }
 	  }
       }
   } //end get_model( vect<str> )
@@ -747,7 +952,6 @@ struct symmodel
   //All holes which are filled by models, have their global scope printed too.
   void check_and_enumerate( size_t depth = 0 )
   {
-    fprintf(stdout, "\n");
     prefixprint( depth );
     fprintf( stdout, "MODEL [%s] (modelnametype [%s])\n", localname.c_str(), name.c_str() );
 
@@ -781,7 +985,6 @@ struct symmodel
     
     prefixprint( depth );
     fprintf(stdout, "=SUBMODELS:\n");
-    //prefixprint( depth );
     for(size_t subm=0; subm<models.size(); ++subm)
       {
 	size_t jump=5;
