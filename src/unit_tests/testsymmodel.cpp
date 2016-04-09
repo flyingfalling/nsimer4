@@ -97,8 +97,11 @@ void test_build()
   gNMDA->addhole( "presyn" );
   
 
-  gAMPA->add_to_updatefunct( "SET(g, SUM(g, SUMFORALL(presyn, MULT(hitweight, postsyn-gNMDA/affinity) ) ) )" );
-  gAMPA->add_to_updatefunct( "SET(g, MULT(g, EXP( NEGATE( tau1 ) ) ) )" );
+  //REV: In this case, we "get" a model per presyn, but how do we handle with it? It is SUMMED. Do I always need to tell it how to handle many?
+  //E.g. SUMFORALL(), which is a sum for all elements, not sum for all HOLES?
+  //Ah, if it is a single model, I know that is the thing for it. I can check number of args. If it is 1, I cll one, if 2, the other ;)
+  gNMDA->add_to_updatefunct( "SET(g, SUM(g, SUMFORALL(presyn, SUMFORALL(MULT(hitweight, postsyn-gNMDA/affinity) ) ) ) )" );
+  gNMDA->add_to_updatefunct( "SET(g, MULT(g, EXP( NEGATE( tau1 ) ) ) )" );
   
   
   

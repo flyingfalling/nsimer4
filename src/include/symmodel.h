@@ -34,6 +34,19 @@
 //No, just pass it through.
 
 
+//REV: OK, final situation, we are passing indices and it automatically gets models, which is fine.
+//It still doesn't access with corresps, because corresps always return VECTOR<IDXS> or VECTOR<VALS>
+
+//In case where it is a one-to-many this will not work, as it is not clear what to get?
+//Base case is to get only a single value?
+//Obviously, we can just access vect[0] to get "main" value.
+//However, in some cases, user will be iterating through it.
+//Those will (by default?) be iterating through a HOLE!!!!!!!!!!!!!!
+//i.e. READFORALL
+
+
+
+
 
 #pragma once
 
@@ -57,7 +70,8 @@ using std::string;
 struct symmodel;
 struct cmdstore;
 
-typedef std::function< real_t( const string&, std::shared_ptr<symmodel>&, const cmdstore&, const size_t& ) > cmd_functtype;
+
+typedef std::function< real_t( const string&, std::shared_ptr<symmodel>&, const cmdstore&, const size_t&, const size_t& ) > cmd_functtype;
 
 
 vector<string> parse( const string& name);
@@ -208,9 +222,9 @@ struct cmdstore
 
 
 
-#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
+#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx, const size_t& targidx )
 
-FUNCDECL( DOCMD );
+FUNCDECL(DOCMD);
 FUNCDECL(READ);
 FUNCDECL(SET);
 FUNCDECL(SUM);
@@ -268,6 +282,18 @@ struct updatefunct_t
 };
 
 
+
+struct elemptr
+{
+  std::shared_ptr<symmodel> model;
+  size_t idx;
+
+  elemptr( const std::shared_ptr<symmodel>& p, const size_t& i )
+  : model( p ), idx( i )
+  {
+  }
+};
+
 //REV: what to do when I make a circuit a submodel of another? Is it possible?
 //I guess. So, I guess all guys only go up until there is some "top model" type guy, which is different type or has a flag set.
 
@@ -283,9 +309,36 @@ struct corresp
   : targmodel( t )
   {
   }
+  
+  size_t get( const size_t& s, const size_t& offset )
+  {
+    vector<size_t> g = get( s );
+    if( offset >= g.size() )
+      {
+	fprintf(stderr, "REV: error requested offset larger than size\n");
+	exit(1);
+      }
+    return g[ offset ];
+  }
+  
+  real_t getvar( const size_t& s, const symvar& var, const size_t& offset )
+  {
+    vector<real_t> gv = getallvar( s, var );
+    if(offset > gv.size())
+      {
+	fprintf(stderr, "REV: ERROR, getvar > offset\n");
+	exit(1);
+      }
 
-  virtual vector<size_t> get( const size_t& s ) = 0;
-  virtual vector<real_t> getvar( const size_t& s, const symvar& var ) = 0;
+    return gv[ offset ];
+  }
+  
+  //REV: user never does a raw GET, they only use GETVAR.
+  //However, creating new vect is a pain in the ass, so just return IDX directly
+  virtual vector<size_t> getall( const size_t& s ) = 0;
+  //virtual size_t get( const size_t& s, const size_t& offset ) = 0;
+  virtual vector<real_t> getallvar( const size_t& s, const symvar& var ) = 0;
+  //virtual real_t getvar( const size_t& s, const symvar& var, const size_t& offset ) = 0;
 };
 
 
@@ -293,13 +346,15 @@ struct corresp
 //ONLY LOCAL MODELS SET, SO EVERYTHING ELSE IS A READ!! :)
 struct identity_corresp : public corresp
 {
-  vector<size_t> get( const size_t& s )
+  vector<size_t> getall( const size_t& s )
   {
     return vector<size_t>(1, s);
   }
 
+  
+  
   //size_t getvar( const size_t& s, const std::vector<real_t>& var )
-  vector<real_t> getvar( const size_t& s, const symvar& var )
+  vector<real_t> getallvar( const size_t& s, const symvar& var )
   {
     //size_t idx = get(s); //REV: no need, it's identity.
     if( s >= var.valu.size() )
@@ -310,6 +365,7 @@ struct identity_corresp : public corresp
 
     return vector<real_t>(1, var.valu[s] );
   }
+  
 
   identity_corresp( const std::shared_ptr<symmodel>& targ )
     :
@@ -319,13 +375,11 @@ struct identity_corresp : public corresp
     }
 };
 
-//const identity_corresp IDENTITY;
 
 
 struct conn_corresp : public corresp
 {
-  //Need to code this
-  std::vector<size_t> get( const size_t& s )
+  std::vector<size_t> getall( const size_t& s )
   {
     if( s >= startidx.size() )
       {
@@ -338,10 +392,10 @@ struct conn_corresp : public corresp
     return std::vector<size_t>( correspondence.begin()+start, correspondence.begin()+start+size);
   }
 
-  //std::vector<real_t> getvar( const size_t& s, const std::vector<real_t>& var )
-  std::vector<real_t> getvar( const size_t& s, const symvar& var )
+
+  
+  std::vector<real_t> getallvar( const size_t& s, const symvar& var )
   {
-    
     std::vector<size_t> myidxs = get( s );
     std::vector<real_t> ret( myidxs.size() );
     for( size_t x=0; x<myidxs.size(); ++x )
@@ -365,6 +419,7 @@ struct conn_corresp : public corresp
 
     return ret;
   }
+
   
  conn_corresp( const std::shared_ptr<symmodel>& targ )
    : corresp( targ )
@@ -448,6 +503,15 @@ struct symmodel
 	}
       return false;
     } //end getcorresp
+
+  bool check_same_toplevel_model( const std::shared_ptr<symmodel>& targmodel )
+  {
+    if( get_toplevel_model() == targmodel->get_toplevel_model() )
+      {
+	return true;
+      }
+    return false;
+  }
   
   std::shared_ptr<symmodel> get_toplevel_model()
     {
@@ -488,6 +552,12 @@ struct symmodel
 
     vector<std::shared_ptr<symmodel>> oldsubmodels = newmodel->models;
     newmodel->models.clear();
+
+    if( correspondences.size() > 0 )
+      {
+	fprintf(stderr, "REV: ERROR in CLONE, cloning but model clone of correspondences is not implemented! Do it!\n");
+	exit(1);
+      }
     
     for(size_t m=0; m<oldsubmodels.size(); ++m )
       {
@@ -562,6 +632,8 @@ struct symmodel
       
   }
 
+  
+  
 
   //This asks, is s a submodel of me?
   bool is_submodel( const std::shared_ptr<symmodel>& s )
@@ -826,6 +898,166 @@ struct symmodel
 	fprintf(stdout, "[%s] (modelname [%s])\n", models[m]->localname.c_str(), models[m]->name.c_str() );
       }
   }
+
+
+  //REV: does this literally get a model, or does it only blah? Ah, usually this will be "get containing model" type thing.
+  //Note, a lot of time it will be to get the correspondence.
+
+
+  //Do I return the model itself, or do I just append? I guess return the model, much easier. If I go deeper, I need to append to modeltrace, but pop off as I come back.
+
+  //I am searching for the solution to MODEL1/HOLE1/HOLE2/MODEL3, etc., given start idx (beginning of trace)
+  elemptr get_model_widx( const vector<string>& parsed, const size_t idx, const vector<elemptr>& trace ) //const vector< std::shared_ptr<symmodel> >& modeltrace, const vector< size_t >& idxtrace )
+  {
+    //same as get_model, but I always keep index around at each point, and when I return, I return a model and an index
+
+    //I start with it already parsed.
+    //If parsed.size() == 0, I simply return this (with an index?)
+    if( parsed.size() == 0)
+      {
+	return elemptr( shared_from_this(), idx );
+      }
+
+    //This is the next model I will go into
+    string submodel = parsed[0];
+    vector<string> remainder( parsed.begin()+1, parsed.end() ); //same as remainder, remainder.erase(0);
+
+    //REV: This is where I should iterate up the tree! This is the issue.
+    vector<size_t> mlocs = find_model( submodel );
+    vector<size_t> hlocs = find_hole( submodel );
+    
+    //At this point, we are finding the hole etc. normally.
+    if( mlocs.size() >= 1 )
+      {
+	if( mlocs.size() > 1 )
+	  {
+	    fprintf(stderr, "WTF found more than one in getmodelwidx\n");
+	    exit(1);
+	  }
+	size_t mloc = mlocs[0];
+	//add model to trace? I guess? It is a submodel, so it is not necessary I guess? But it helps it find submodels I guess? Could this cause a problem?
+
+	std::shared_ptr<symmodel> nextmodel = models[mloc];
+	
+	vector<elemptr> newtrace = trace;
+	size_t idx_in_submodel = idx; //no change, b/c submodel.
+	newtrace.push_back( elemptr( shared_from_this(), idx ) );
+	
+	return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+      }
+    else if( hlocs.size() >= 1 )
+      {
+	if( hlocs.size() > 1)
+	  {
+	    fprintf(stderr, "WTF more than one HOLE found in getmodelwidx\n");
+	    exit(1);
+	  }
+
+	size_t hloc = hlocs[0];
+	if( holes[ hloc ].members.size() != 1 )
+	  {
+	    fprintf(stderr, "ERROR in get_model_widx, getting [%s] from HOLE, but hole [%s] has size [%lu], but it should be 1\n", submodel.c_str(), holes[hloc].name.c_str(), holes[hloc].members.size() );
+	    exit(1);
+	  }
+
+	//REV: At this point we need to be careful. We need to go through a correspondence if it is an external model. Maybe if it is an internal one. Not for now.
+
+	std::shared_ptr<symmodel> nextmodel = holes[hloc].members[0];
+	//Will this ever happen? I search submodels first, so probably not?
+	//Note, this is not iterating UP the tree to find model names??? Shit...
+	//If I do that, what happens? It eventually never finds it?
+	if( check_same_toplevel_model( nextmodel ) )
+	  {
+	    vector<elemptr> newtrace = trace;
+	    size_t idx_in_submodel = idx; //no change, b/c submodel.
+	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
+	    
+	    return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+	  }
+	else
+	  {
+	    //I NEED TO GO THROUGH A CORRESPONDENCE
+	    //If I find it, but the corresp has multiple answers for me, then I quit.
+	    //Note, index should specify which one to get directly right?
+	    //FUCK FUCK NO NO NO IT WONT, bc ill tell it which one to get, and it
+	    //will get it directly? No that will work...as long as I dont try to
+	    //access it as e.g. BLAH/BLAH/MULTIVAR
+
+	    std::shared_ptr<corresp> mycorresp;
+	    bool exists = getcorresp( nextmodel, mycorresp );
+	    if( !exists )
+	      {
+		fprintf(stderr, "REV: getcorresp in get_model_widx, failed, no such corresp exists between [%s] and [%s]\n", buildpath().c_str(), nextmodel->buildpath().c_str());
+		exit(1);
+	      }
+
+	    //get corresponding guy in corresp.
+	    vector<size_t> sanity = mycorresp->getall( idx );
+	    if( sanity.size() != 1 )
+	      {
+		fprintf(stderr, "SANITY check for corresp during access failed! Expected corresp for idx [%lu] of model [%s] to have only 1 corresponding element in model [%s], but it had [%lu]\n", idx, buildpath().c_str(), nextmodel->buildpath().c_str(), sanity.size() );
+		exit(1);
+	      }
+
+	    //Else, just return the model, with the index I guess
+
+	    vector<elemptr> newtrace = trace;
+	    size_t idx_in_submodel = sanity[0]; //no change, b/c submodel.
+	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
+
+	    return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+	  }
+      }
+    else
+      {
+	//Else, try to bubble up to ROOT.
+	//If I'm at root, I try to find in trace? Fuck...
+	//It will try to match every sub-fucking model until it finds one lol.
+	//If I try to bubble up to root, do I add it to the stream in the same way?
+	//I guess so, same as a submodel heh...
+	if( parent && (parent->parent) )
+	  {
+	    std::shared_ptr<symmodel> nextmodel = parent;
+	    
+	    vector<elemptr> newtrace = trace;
+	    size_t idx_in_submodel = idx; //no change, b/c submodel.
+	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
+	    
+	    return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+	    
+	    nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+	  }
+	else if(  parent && !(parent->parent) )
+	  {
+	    //ONLY if size of trace is zero do we exit?
+	    if(trace.size() == 0)
+	      {
+		fprintf(stderr, "REV: Error, could not find in get_model_widx, even by bubbling up parents, or by jumping back model trace\n");
+		exit(1);
+		  
+	      }
+	  }
+	else
+	  {
+	    fprintf(stderr, "REV; this should never happen weird, parent->parent but not parent. Exit\n");
+	    exit(1);
+	  }
+      } //couldn't find in "else" (i.e. not in this model, so try bubbling up parents)
+
+    if(trace.size() == 0)
+      {
+	fprintf(stderr, "Trace size zero\n");
+	exit(1);
+      }
+    //Move back model and try again?
+    vector<elemptr> newtrace = trace;
+    size_t idx_in_submodel = trace[ newtrace.size() - 1].idx; //end of trace.
+    std::shared_ptr<symmodel> nextmodel = trace[ newtrace.size() - 1].model;
+    newtrace.pop_back();
+
+    return nextmodel->get_model_widx( parsed, idx_in_submodel, newtrace );
+    
+  }
   
   //REV: This finds "variable" inside a model? Or it finds model?
   //REV; This "BUBBLES" all the way up to root! Note, it should only bubble to root-1
@@ -877,7 +1109,7 @@ struct symmodel
 	      }
 	    else if( parent && parent->parent )
 	      {
-		parent->get_model( nparsed );
+		return parent->get_model( nparsed );
 	      }
 	    else
 	      {
