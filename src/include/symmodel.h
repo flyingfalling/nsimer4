@@ -90,6 +90,45 @@ struct symvar
   size_t written=false;
 
   std::shared_ptr<symmodel> parent;
+
+  bool init=false;
+  
+  real_t& get( const size_t& idx )
+  {
+    
+  }
+  
+  real_t getvalu( const size_t& idx )
+  {
+    if( !init )
+      {
+	return 0;
+      }
+    
+    if( idx >= valu.size() )
+      {
+	fprintf(stderr, "In symvar, getvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
+	exit(1);
+      }
+
+    return valu[idx];
+  }
+
+  void setvalu( const size_t& idx, const real_t& val )
+  {
+    if( !init )
+      {
+	//do nothing
+      }
+    
+    if( idx >= valu.size() )
+      {
+	fprintf(stderr, "In symvar, setvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
+	exit(1);
+      }
+
+    valu[idx] = val;
+  }
   
   void reset()
   {
@@ -219,10 +258,142 @@ struct cmdstore
     
 };
 
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ )
+{
+  std::shared_ptr<corresp> tmp;
+  
+  bool gotit = curr->getcorresp( targ, tmp );
+  if(!gotit)
+    {
+      fprintf(stderr, "ERROR in some function execution, could not find required corresp between models [%s] and [%s]\n", curr->buildpath().c_str(), targ->buildpath().c_str() );
+      exit(1);
+    }
+  
+  return tmp;
+}
+
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace )
+{
+  elemptr lastguy = get_curr_model(); //trace[trace.size()-1];
+  
+  return getcorresp( lastguy.model, targ );
+}
+
+elemptr get_curr_model( const vector<elemptr>& trace )
+{
+  if(trace.size() < 1)
+    {
+      fprintf(stderr, "REV: error in get_curr_model, trace is length 0\n");
+      exit(1);
+    }
+  return trace[ trace.size()-1 ];
+}
+
+bool check_cmd_is_multi( const string& s )
+{
+  const string mult = "MULTFORALL";
+  const string sum = "SUMFORALL";
+  if( s.compare( mult ) == 0 || s.comapre( sum ) == 0 )
+    {
+      return true;
+    }
+  return false;
+}
+
+real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds )
+{
+  //RE-parse toexec, to check what function it is.
+  //If it is one of the given functions, then we go.
+
+  vector<string> sanityparse = cmds.doparse( toexec );
+  if ( sanityparse.size() != 1 )
+    {
+      fprintf(stderr, "Sanity parse failed in execwcorresp, it is comma sep\n");
+      exit(1);
+    }
+  
+  vector<string> parsed = cmds.fparse( toexec );
+  if(parsed.size() < 1 || parsed[0].size() < 1)
+    {
+      fprintf(stderr, "ERROR: parsed size < 1 (or str len < 1). Exec [%s]\n", toexec.c_str());
+      exit(1);
+    }
+
+  
+  if( check_multi )
+    {
+      //Exec for all corresp.
+      //curr model is already pushed back. We need toarget model)
+      size_t arbitrary_idx = 666;
+      elemptr tmpelem( m, arbitrary_idx ); //idx is arbitrary
+      vector<elemptr> newtrace = trace;
+      newtrace.push_back( tmpelem );
+
+      //Note toexec is the whole thing passed, we didn't strip it.
+      //we are just handling it in a special way based on #args and pushing back to
+      //trace.
+      //DOCMD will strip the first part and execute it.
+      //In other words, in this csae it is sumforall, with one arg only.
+      //So, it will strip SUMFORALL, pass it in, and appropriately handle it
+      //as a DOCMDSUMCONNS
+      return DOCMD( toexec, newtrace, cmds );
+    }
+  else //Otherwise, I just execute it. But, in that, I make sure that
+    //the correspondence is not fucked up.
+    {
+      elemptr currmodel = get_curr_model();
+      std::shared_ptr<corresp> corr = getcorresp( currmodel.model, m );
+      size_t curridx = currmodel.idx;
+      vector<size_t> c = corr.getall( curridx );
+      if( c.size() != 1 )
+	{
+	  fprintf(stderr, "REV: SUPER ERROR in exec_w_corresp, trying to execute [%s] but model [%s]->[%s] is one-to-many (or zero) ([%lu])\n", toexec.c_str(), currmodel.model->buildtrace().c_str(), m->buildtrace().c_str(), c.size() );
+	  exit(1);
+	}
+      size_t newidx = c[0];
+      vector<elemptr> newtrace = trace;
+      elemptr tmpelem( m, newidx );
+      newtrace.push_back( tmpelem );
+
+      return DOCMD( toexec, newtrace, cmds );
+    }
+
+  fprintf(stderr, "REV: error exec w corresp reached end somehow\n");
+  exit(1);
+} //end exec_w_corresp
 
 
+elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace )
+{
+  
+  elemptr lastguy = get_curr_model(); //trace[trace.size()-1];
+  vector<elemptr> newtrace = trace;
+  newtrace.pop_back();
+  return lastguy.model->get_model_widx( parsearg, lastguy.idx, newtrace );
+}
 
-#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx, const size_t& targidx )
+elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace )
+{
+  
+  elemptr lastguy = get_curr_model( trace );
+  vector<elemptr> newtrace = trace;
+  newtrace.pop_back();
+  return lastguy.model->get_containing_model_widx( parsearg, lastguy.idx, newtrace );
+}
+
+
+//#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
+
+//"easiest" way is to simply push-back on the end of the model trace. In that way, I will always use the last guy.
+//So, instead of directly pushing, it just uses the last guy.
+//Problem is, in the case of the other one, it takes a vector it's trying to find? It's "this one", i.e. always points to "calling" guy.
+//So, the first time I call it, which model do I call it with? Ah, the base model I guess? Shit...no, it's called from the model I am updating. Ah...
+//So, yea, it takes a vector.
+
+//REV: yea, OK, easiest to just make the last one be the model/idx. Then when i call get_model_widx, I will use the end of that trace to do the calling I guess.
+//Or, I could use it as a sanity check. Like, the last guy on me, should always be myself and my index. Note that then I have no need to pass index...
+//Could just make global function, that wraps the calls.
+#define FUNCDECL( fname )   real_t fname( const string& arg, const vector<elemptr>& trace, const cmdstore& cmds )
 
 FUNCDECL(DOCMD);
 FUNCDECL(READ);
@@ -301,6 +472,8 @@ struct corresp
 {
   std::shared_ptr<symmodel> targmodel;
 
+  bool init=false;
+
   corresp()
   {
   }
@@ -331,6 +504,16 @@ struct corresp
       }
 
     return gv[ offset ];
+  }
+
+  void markinit()
+  {
+    init=true;
+  }
+  
+  bool initialized()
+  {
+    return init;
   }
   
   //REV: user never does a raw GET, they only use GETVAR.
@@ -447,8 +630,9 @@ struct symmodel
   string localname="__ERROR_MODEL_LOCALNAME_UNSET";
   vector<string> type;
   
-  vector<symvar> vars;
-    
+  //vector<symvar> vars;
+  vector< std::shared_ptr<symvar> > vars;
+  
   vector< std::shared_ptr<symmodel> > models;
   //vector<string> modelnames;
   //vector<string> modeltypes;
@@ -550,6 +734,17 @@ struct symmodel
     newmodel->localname="__ERROR_MODEL_LOCALNAME_UNSET";
     //type is same
 
+    //need to make new vars. Make sure parent points correctly.
+    //vector<std::shared_ptr<symvar>> oldvars = newmodel->vars;
+    //newmodel->vars.clear();
+    for(size_t v=0; v<newmodel->vars.size(); ++v )
+      {
+	//auto newvar = std::make_shared<symvar>( );
+	newmodel->vars[v]->parent = newmodel;
+
+	//newmodel->vars[v]->valu.clear(); //clear valu? if it had size, it is fucked.
+      }
+    
     vector<std::shared_ptr<symmodel>> oldsubmodels = newmodel->models;
     newmodel->models.clear();
 
@@ -614,7 +809,7 @@ struct symmodel
   
   void addvar( const string& s, const string& t )
   {
-    vars.push_back( symvar(s, t, shared_from_this() ) ); //std::shared_ptr<symmodel>(this)) );
+    vars.push_back( std::make_shared<symvar>(s, t, shared_from_this() ) ); //std::shared_ptr<symmodel>(this)) );
   }
 
   void addhole( const string& s )
@@ -662,6 +857,23 @@ struct symmodel
   //We need to know when to update. If we only reference variables, we don't know when they've been updated. They must only be parameters?
 
   
+
+
+  //REV fuck ambiguous problem here
+
+  //Get containing model is supposed to:
+  //get the "next model up" given a string (i.e. bot model might not exist yet). So, if I try to add e.g. adex1/gAMPA/mod3/blah, but mod3 is in adex, not gAMPA, it will still
+  //correctly create it in adex1/mod3? Hm. that doesn't seem right. In those cases, it will error out I guess...
+
+  //For finding the containing model of a model that exists, I simply find the model, and then take "parent".
+
+  //For finding the containing model of a variable that exists (?), I literally get that model location...problem is I want to find a variable. So I want to search for
+  //it up the hierarchy. So, get_containing_model, would get the "ostensible" containing model, but then would look up the hierarchy from that model for the variable
+  //(or in any passed through locations? No). So, at any rate, do I need to "check" that the variable is in containing model? No, because actually getting the variable
+  //will be done by iterating up the thread.
+  //The problem is, then the containing model would need to change.
+  //So, they should be done together. In other words, getting the variable, should also get the correct containing model. So, finding the correct containing model,
+  //should always return it. So, make a new funct.
   
   void addmodel( const std::shared_ptr<symmodel>& m, const string& _localname )
   {
@@ -675,6 +887,7 @@ struct symmodel
 
     //REV: Ah, get containing model will return what? Localname will just be gL.
     //So, containing model should be "this"
+    //REV: This gets the containing model of the localname (as a VECTOR or VAR). Fuck that, literally just do, find the model, then model->parent type shit.
     auto realmodel = get_containing_model( _localname, newmodelname );
 
     auto modelclone = m->clone();
@@ -769,6 +982,8 @@ struct symmodel
 
 	    //REV: ADD CORRESP FROM THIS
 	    addcorresp( modeltofillwith ); //or I could have lots of corresp pointers sitting around...
+	    //NOTE NEED TO PUSH TO OTHER SIDE TOO!
+	    modeltofillwith->addcorresp( shared_from_this() );
 	  }
 	else
 	  {
@@ -902,12 +1117,50 @@ struct symmodel
 
   //REV: does this literally get a model, or does it only blah? Ah, usually this will be "get containing model" type thing.
   //Note, a lot of time it will be to get the correspondence.
-
-
+  
+  
   //Do I return the model itself, or do I just append? I guess return the model, much easier. If I go deeper, I need to append to modeltrace, but pop off as I come back.
 
+  //Do same for read var...basically I find the containing model...then bam.
+  //Wait, I need to get back a symvar ptr too?
+  //Yea, so I get model, idx, and symptr. That's great.
+  //Get-containing-model of var type thing. Just strips off end.
+  //Then gets the containing model. Then the only thing is to get the var from the model with idx. That is gotten as normal haha.
+
+  //This also checks that variable actually exists in that contained model, rather than iterating up the trace.
+  //Once I get the symvar, I can use symvar->parent to get actual containing model ;) OK, great.
+
+  
+  elemptr get_containing_model_widx( const string& unparsed, const size_t& idx, const vector<elemptr>& trace )
+  {
+    vector<string> parsed = parse( unparsed );
+    return get_containing_model_widx( parsed, idx, trace );
+  }
+  
+  elemptr get_containing_model_widx( const vector<string>& parsed, const size_t& idx, const vector<elemptr>& trace )
+  {
+    if(parsed.size() < 1)
+      {
+	fprintf(stderr, "REV: error in get containing model w idx, parsed size < 1\n");
+	exit(1);
+      }
+    vector<string> popped = parsed;
+    string varname = popped[ popped.size()-1 ];
+    popped.pop_back();
+
+    return get_model_widx( parsed, idx, trace );
+    //I now need to find that model, which better contain var...
+    //Note, will looking for a var bubble back up? Only in var name? Or..?
+  }
+  
+  elemptr get_model_widx( const string& unparsed, const size_t& idx, const vector<elemptr>& trace )
+  {
+    vector<string> parsed = parse( unparsed );
+    return get_model_widx( parsed, idx, trace );
+  }
+  
   //I am searching for the solution to MODEL1/HOLE1/HOLE2/MODEL3, etc., given start idx (beginning of trace)
-  elemptr get_model_widx( const vector<string>& parsed, const size_t idx, const vector<elemptr>& trace ) //const vector< std::shared_ptr<symmodel> >& modeltrace, const vector< size_t >& idxtrace )
+  elemptr get_model_widx( const vector<string>& parsed, const size_t& idx, const vector<elemptr>& trace )
   {
     //same as get_model, but I always keep index around at each point, and when I return, I return a model and an index
 
@@ -990,19 +1243,23 @@ struct symmodel
 		fprintf(stderr, "REV: getcorresp in get_model_widx, failed, no such corresp exists between [%s] and [%s]\n", buildpath().c_str(), nextmodel->buildpath().c_str());
 		exit(1);
 	      }
-
-	    //get corresponding guy in corresp.
-	    vector<size_t> sanity = mycorresp->getall( idx );
-	    if( sanity.size() != 1 )
+	    
+	    
+	    //REV; SANITY, if corresp not allocated yet, just return 0.
+	    size_t idx_in_submodel = 0;
+	    //REV; Don't check this here, check this in the corresp struct? I.e. return dummy data if it is not existing yet (or exit?)
+	    if(mycorrep->initialized())
 	      {
-		fprintf(stderr, "SANITY check for corresp during access failed! Expected corresp for idx [%lu] of model [%s] to have only 1 corresponding element in model [%s], but it had [%lu]\n", idx, buildpath().c_str(), nextmodel->buildpath().c_str(), sanity.size() );
-		exit(1);
+		vector<size_t> sanity = mycorresp->getall( idx );
+		if( sanity.size() != 1 )
+		  {
+		    fprintf(stderr, "SANITY check for corresp during access failed! Expected corresp for idx [%lu] of model [%s] to have only 1 corresponding element in model [%s], but it had [%lu]\n", idx, buildpath().c_str(), nextmodel->buildpath().c_str(), sanity.size() );
+		    exit(1);
+		  }
+		size_t idx_in_submodel = sanity[0]; //no change, b/c submodel.
 	      }
 
-	    //Else, just return the model, with the index I guess
-
 	    vector<elemptr> newtrace = trace;
-	    size_t idx_in_submodel = sanity[0]; //no change, b/c submodel.
 	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
 
 	    return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
@@ -1122,39 +1379,75 @@ struct symmodel
   
     
 
-  size_t get_varloc( const string& s )
+  vector<size_t> get_varloc( const string& s )
   {
+    vector<size_t> loc;
     for(size_t x=0; x<vars.size(); ++x)
       {
-	if( s.compare( vars[x].name ) == 0 )
+	if( s.compare( vars[x]->name ) == 0 )
 	  {
-	    return x;
+	    loc.push_back(x);
 	  }
       }
 
-    fprintf(stderr, "REV: ERROR variable [%s] could not be found in this model [%s]\n", s.c_str(), name.c_str() );
-    exit(1);
+    return loc;
+    //fprintf(stderr, "REV: ERROR variable [%s] could not be found in this model [%s]\n", s.c_str(), name.c_str() );
+    //exit(1);
   }
 
+  bool is_toplevel()
+  {
+    if(parent & parent->parent)
+      {
+	return false;
+      }
+    return true;
+  }
+
+
+  
+  
+  
   //REV: meh these should be shared ptrs too?
-  symvar& getvar( const string& s )
+  std::shared_ptr<symvar> getvar( const string& s )
   {
     //std::vector<string> parsed = parse( s );
     string varname;
     std::shared_ptr<symmodel> containingmodel = get_containing_model( s, varname );
-    size_t loc = containingmodel->get_varloc( varname );
-    return vars[ loc ];
+    vector<size_t> loc = containingmodel->get_varloc( varname );
+
+    if(loc.size() == 0 )
+      {
+	if( parent )
+	  {
+	    return parent->getvar( s );
+	  }
+	else
+	  {
+	    fprintf(stderr, "GETVAR, could not get variable through model hierarchy. Note I am now at root level so I do not kn ow model name...[%s]\n", s.c_str());
+	    exit(1);
+	  }
+      }
+    if(locs.size() > 1 )
+      {
+	fprintf(stderr, "REV weird more than one var of same name [%s]\n", s.c_str());
+	exit(1);
+      }
+
+    //actualcontaining = shared_from_this();
+    return vars[ loc[0] ];
   }
 
-  symvar& readvar( const string& s )
+  std::shared_ptr<symvar> readvar( const string& s )
   {
-    getvar( s ).readvar();
+    //std::shared_ptr<symmodel> tmp;
+    getvar( s )->readvar();
     return getvar(s);
   }
 
   void setvar( const string& s, const real_t& v )
   {
-    getvar( s ).writevar();
+    getvar( s )->writevar();
     return;
   }
 
