@@ -68,26 +68,7 @@ FUNCDECL(DOCMD)
 }
 
 
-//REV: this is "fake" read...I want to compile it into a "real" read, which requires actually looking at correspondence! :)
-//If correspondences are not made yet, then whatever?
-//So, yea, they should take "symvar" after all ;)
-//Which variable I "read" will depend on my "local idx" in the model (i.e. what is my thread?)
-//Can I pass that? I.e. in reality it will iterate each one in turn, calling "model" with "index in model".
-//Literally a for loop through the model indexes? :) Calling update function.
-//Need to check variable update dependencies to know if we need to automatically generate new variables?
 
-//REV: I am making this over-complex. But, I don't want to "reprogram" these, so better to have it actually access
-//the variable with offset, based on calling model?
-//But, I'm making it do too many things. Best idea is to have differnet structs to do the actual lookup etc.
-//Problem is that, it always must know member index in it?
-//Which means all variables must pass the index through ;)
-//"MODEL" is the model I am "calling" from (?)
-//In which case it might go inside a "sub" (hole) different model at some point. In which case, index basis will change.
-//real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
-
-//In this case, everything will work because it is reading directly a value. However, the problem is that the "returned" value...is what?
-//If I go inside and execute recursively, e.g. for all of a hole of that sub-model, then it will lose track of the local idx? No...no it won't.
-//I'm iterating through the idx HERE, and passing those idx in the sub-function. So it is using those to search for all members in there I guess. Fine.
 FUNCDECL(READ)
 {
   fprintf( stdout, "Executing READ arg: [%s]\n", arg.c_str() );
@@ -101,13 +82,8 @@ FUNCDECL(READ)
   //May still be blah/blah/blah
   string varname = parsed[0];
   
-  //"I" am the reading model. SO, I need to do model ->get
   string vartail;
 
-  //REV: wait, what the fuck? It should call from "here" (i.e. from tail), not from 
-  
-  //std::shared_ptr<symmodel> contmodel = get_containing_model_widx( varname, trace );
-  //elemptr ep = get_containing_model_widx( varname, trace, vartail );
   elemptr ep = get_curr_model(trace);
   std::shared_ptr<symvar> var = ep.model->getvar_widx( varname, ep.idx, trace );
   fprintf(stdout, "REV: finished getting it, checking parent...\n");
@@ -130,8 +106,6 @@ FUNCDECL(READ)
 }
 
 
-//REV ERROR is parsed[0] is not a variable!!
-//real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(SET)
 {
   fprintf( stdout, "Executing SET arg: [%s]\n", arg.c_str() );
@@ -147,8 +121,7 @@ FUNCDECL(SET)
   string varname = parsed[0];
 
   string vartail;
-  //std::shared_ptr<symmodel> contmodel = get_containing_model_widx( varname, trace );
-  //elemptr ep = get_containing_model_widx( varname, trace, vartail );
+  
   elemptr ep = get_curr_model(trace);
   std::shared_ptr<symvar> var = ep.model->getvar_widx( varname, ep.idx, trace );
   std::shared_ptr<symmodel> contmodel = var->parent; //haha, true containing model... implies it stepped up  hierarchy some.
@@ -182,7 +155,6 @@ FUNCDECL(SUM)
 
 
 //product
-//real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(MULT)
 {
   fprintf( stdout, "Executing MULT arg: [%s]\n", arg.c_str() );
@@ -202,7 +174,6 @@ FUNCDECL(MULT)
 }
 
 //div
-//real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(DIV)
 {
   fprintf( stdout, "Executing DIV arg: [%s]\n", arg.c_str() );
@@ -224,7 +195,6 @@ FUNCDECL(DIV)
 }
 
 //subtract
-//real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(DIFF)
 {
   fprintf( stdout, "Executing DIFF arg: [%s]\n", arg.c_str() );
@@ -245,7 +215,6 @@ FUNCDECL(DIFF)
 }
 
 
-//real_t NEGATE( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(NEGATE)
 {
   fprintf( stdout, "Executing NEGATE arg: [%s]\n", arg.c_str() );
@@ -258,7 +227,6 @@ FUNCDECL(NEGATE)
   return (-1.0 * val);
 }
 
-//real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(EXP)
 {
   fprintf( stdout, "Executing EXP arg: [%s]\n", arg.c_str() );
@@ -601,16 +569,11 @@ real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel
       newtrace.push_back( tmpelem );
 
       //Note toexec is the whole thing passed, we didn't strip it.
-      //we are just handling it in a special way based on #args and pushing back to
-      //trace.
+      //we are just handling it in a special way based on #args and pushing back to trace.
       //DOCMD will strip the first part and execute it.
-      //In other words, in this csae it is sumforall, with one arg only.
-      //So, it will strip SUMFORALL, pass it in, and appropriately handle it
-      //as a DOCMDSUMCONNS
       return DOCMD( toexec, newtrace, cmds );
     }
-  else //Otherwise, I just execute it. But, in that, I make sure that
-    //the correspondence is not fucked up.
+  else //Otherwise, I just execute it. But, in that, I make sure that corresp is not fucked up.
     {
       elemptr currmodel = get_curr_model(trace);
       std::shared_ptr<corresp> corr = getcorresp( currmodel.model, m );

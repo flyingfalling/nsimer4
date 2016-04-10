@@ -1,58 +1,7 @@
 //TODO: add way to specify things to do at end/beginning of turn (for example, setting V[t-1] to V[t].)
 //TODO: add way to automatically determine dependencies among variables for update purposes (based on read/write during each update line of each model).
-
-
-//REV: insteresting problem, since I am making "types" (items) it is literally getting a pointer to it rather than copying it.
-//If I just had an object, it would do the full object copy.
-//So, either I need the "constructor" for the object instances to build the appropriate structure
-//E.g. BUILD_ADEX( xxx ), which makes a new symmodel with correct submodels
-//*OR* I need to have a deep-copy constructor, which not only copies, but also constructs new instances of all submodels?
-//In other words, recursively call "deep copy"
-//How will that work? When I call it, will the vector<symmodelptr> also deep copy same "pointer" locations, or will it make a new xyzpos etc.?
-
-//Note, when it goes and constructs the "children", it needs to set to me.
-
-
-//REV: TODO, make it so that unique sub-name variables (models) can be read directly...will cause massive headaches for holes though ;)
-
-
-//REV: At any rate, first, make sure that all correspondences are checked ;)
-//How about for "recursive" access of guys? Will that ever happen?
-
-
-//OK, finally, now whenever I am accessing a variable, I always access it VIA CORRESPONDENCE. Problem is, it goes "my model" to "its model". Am I "inside" a model now?
-//The only time it should matter, is when I am accessing via holes. If I access it directly, it is literally an identity. So, I always, when I read a variable, will
-//access it via model->getcorresp( get_containing_model( targvarname ) )
-
-
-
-//OK, now I get corresopndences when I read/write variables.
-//However, final problem is to actually use the correspondence.
-//To use it, I must know
-//1) index in "calling" model
-
-//That is all?
-//I.e. in 'actual' updates, I use an index to call with, but don't care what it is haha.
-//Normally, I execute "for all members in model".
-//It only matters for "read/write" variables.
-//Oh shit, I could literally make a symmodel for every? Nah.
-//Which has its own id? haha...
-//No, just pass it through.
-
-
-//REV: OK, final situation, we are passing indices and it automatically gets models, which is fine.
-//It still doesn't access with corresps, because corresps always return VECTOR<IDXS> or VECTOR<VALS>
-
-//In case where it is a one-to-many this will not work, as it is not clear what to get?
-//Base case is to get only a single value?
-//Obviously, we can just access vect[0] to get "main" value.
-//However, in some cases, user will be iterating through it.
-//Those will (by default?) be iterating through a HOLE!!!!!!!!!!!!!!
-//i.e. READFORALL
-
-
-
-
+//TODO: make options so that I can do "even" updates i.e. spike schedulers.
+//TODO: add random variable functions to functs.
 
 #pragma once
 
