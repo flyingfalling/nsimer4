@@ -186,7 +186,7 @@ FUNCDECL(DIV)
 
   string toexec = parsed[0];
 
-  real_t val=DOCMD( toexec, model, cmds, myidx );
+  real_t val=DOCMD( toexec, trace, cmds );
   
   for( size_t tosum=1; tosum<parsed.size(); ++tosum)
     {
@@ -207,7 +207,7 @@ FUNCDECL(DIFF)
     { exit(1); }
 
   string toexec = parsed[0];
-  real_t val=DOCMD( toexec, model, cmds, myidx );
+  real_t val=DOCMD( toexec, trace, cmds );
   for( size_t tosum=1; tosum<parsed.size(); ++tosum)
     {
       toexec = parsed[tosum];
@@ -245,13 +245,10 @@ FUNCDECL(EXP)
 
 FUNCDECL( SUMFORALL )
 {
-  vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
-  //REV: First part (functname) has already been stripped at this point
+  vector<string> parsed = cmds.doparse( arg );
   
-
   if(parsed.size() == 2 )
     {
-      //DO through holes
       return SUMFORALLHOLES( arg, trace, cmds );
     }
   else if(parsed.size() == 1)
@@ -266,9 +263,6 @@ FUNCDECL( SUMFORALL )
 }
 
 
-//real_t SUMFORALLHOLES( const string& arg, std::shared_ptr<symmodel>& model, const::shared_ptrconst cmdstore& cmds, const size_t& myidx)
-//REV: Do I need to be careful with IDX here? No, I literally go into submodel X from ME?
-//So, at "find model" time, it should work?
 FUNCDECL( SUMFORALLHOLES )
 {
   vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
@@ -282,7 +276,8 @@ FUNCDECL( SUMFORALLHOLES )
   string holename = parsed[0];
   string toexec = parsed[1];
   
-  hole myhole = model->gethole( holename );
+  elemptr currmodel = get_curr_model( trace );
+  hole myhole = currmodel.model->gethole( holename ); 
   
   real_t val=0;
   for( size_t h=0; h<myhole.members.size(); ++h)
@@ -292,9 +287,8 @@ FUNCDECL( SUMFORALLHOLES )
       val += exec_w_corresp( toexec, holemod, trace, cmds );
     }
   return val;
-}
+} //end SUMFORALLHOLES
 
-//real_t SUMFORALLCONNS( const string& arg, std::shared_ptr<symmodel>& model, const::shared_ptrconst cmdstore& cmds, const size_t& myidx)
 FUNCDECL( SUMFORALLCONNS )
 {
   vector<string> parsed = cmds.doparse( arg ); //Make sure it is a legal statement (i.e. not args comma sep)
@@ -334,13 +328,10 @@ FUNCDECL( SUMFORALLCONNS )
 
 FUNCDECL( MULTFORALL )
 {
-  vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
-  //REV: First part (functname) has already been stripped at this point
+  vector<string> parsed = cmds.doparse( arg );
   
-
   if(parsed.size() == 2 )
     {
-      //DO through holes
       return MULTFORALLHOLES( arg, trace, cmds );
     }
   else if(parsed.size() == 1)
@@ -352,7 +343,7 @@ FUNCDECL( MULTFORALL )
       fprintf(stderr, "REV: MULTFORALL is not appropriately spread...\n");
       exit(1);
     }
-}
+} //end MULTFORALL
 
 
 FUNCDECL( MULTFORALLHOLES )
@@ -367,9 +358,10 @@ FUNCDECL( MULTFORALLHOLES )
   
   string holename = parsed[0];
   string toexec = parsed[1];
-  
-  hole myhole = model->gethole( holename );
-  
+
+  elemptr currmodel = get_curr_model( trace );
+  hole myhole = currmodel.model->gethole( holename ); 
+    
   real_t val=1;
   for( size_t h=0; h<myhole.members.size(); ++h)
     {
@@ -378,7 +370,7 @@ FUNCDECL( MULTFORALLHOLES )
       val *= exec_w_corresp( toexec, holemod, trace, cmds );
     }
   return val;
-}
+} //end MULTFORALLHOLES
 
 FUNCDECL( MULTFORALLCONNS )
 {
@@ -456,8 +448,169 @@ cmdstore::cmdstore()
     ADDFUNCT( NEGATE );
     ADDFUNCT( SUMFORALL );
     ADDFUNCT( MULTFORALL );
+
+    ADDFUNCT( SUMFORALLHOLES );
+    ADDFUNCT( MULTFORALLHOLES );
+    ADDFUNCT( SUMFORALLCONNS );
+    ADDFUNCT( MULTFORALLCONNS );
   }
 
 
 
+real_t symvar::getvalu( const size_t& idx )
+{
+  
+    if( !init )
+      {
+	return 0;
+      }
+    
+    if( idx >= valu.size() )
+      {
+	fprintf(stderr, "In symvar, getvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
+	exit(1);
+      }
 
+    return valu[idx];
+  
+}
+
+void symvar::setvalu( const size_t& idx, const real_t& val )
+{
+  if( !init )
+    {
+      //do nothing
+    }
+    
+  if( idx >= valu.size() )
+    {
+      fprintf(stderr, "In symvar, setvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
+      exit(1);
+    }
+
+  valu[idx] = val;
+}
+
+
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ )
+{
+  std::shared_ptr<corresp> tmp;
+  
+  bool gotit = curr->getcorresp( targ, tmp );
+  if(!gotit)
+    {
+      fprintf(stderr, "ERROR in some function execution, could not find required corresp between models [%s] and [%s]\n", curr->buildpath().c_str(), targ->buildpath().c_str() );
+      exit(1);
+    }
+  
+  return tmp;
+}
+
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace )
+{
+  elemptr lastguy = get_curr_model(trace); //trace[trace.size()-1];
+  
+  return getcorresp( lastguy.model, targ );
+}
+
+elemptr get_curr_model( const vector<elemptr>& trace )
+{
+  if(trace.size() < 1)
+    {
+      fprintf(stderr, "REV: error in get_curr_model, trace is length 0\n");
+      exit(1);
+    }
+  return trace[ trace.size()-1 ];
+}
+
+bool check_cmd_is_multi( const string& s )
+{
+  const string mult = "MULTFORALL";
+  const string sum = "SUMFORALL";
+  if( s.compare( mult ) == 0 || s.compare( sum ) == 0 )
+    {
+      return true;
+    }
+  return false;
+}
+
+real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds )
+{
+  //RE-parse toexec, to check what function it is.
+  //If it is one of the given functions, then we go.
+
+  vector<string> sanityparse = cmds.doparse( toexec );
+  if ( sanityparse.size() != 1 )
+    {
+      fprintf(stderr, "Sanity parse failed in execwcorresp, it is comma sep\n");
+      exit(1);
+    }
+  
+  vector<string> parsed = cmds.fparse( toexec );
+  if(parsed.size() < 1 || parsed[0].size() < 1)
+    {
+      fprintf(stderr, "ERROR: parsed size < 1 (or str len < 1). Exec [%s]\n", toexec.c_str());
+      exit(1);
+    }
+
+  
+  if( check_cmd_is_multi( toexec ) )
+    {
+      //Exec for all corresp.
+      //curr model is already pushed back. We need toarget model)
+      size_t arbitrary_idx = 666;
+      elemptr tmpelem( m, arbitrary_idx ); //idx is arbitrary
+      vector<elemptr> newtrace = trace;
+      newtrace.push_back( tmpelem );
+
+      //Note toexec is the whole thing passed, we didn't strip it.
+      //we are just handling it in a special way based on #args and pushing back to
+      //trace.
+      //DOCMD will strip the first part and execute it.
+      //In other words, in this csae it is sumforall, with one arg only.
+      //So, it will strip SUMFORALL, pass it in, and appropriately handle it
+      //as a DOCMDSUMCONNS
+      return DOCMD( toexec, newtrace, cmds );
+    }
+  else //Otherwise, I just execute it. But, in that, I make sure that
+    //the correspondence is not fucked up.
+    {
+      elemptr currmodel = get_curr_model(trace);
+      std::shared_ptr<corresp> corr = getcorresp( currmodel.model, m );
+      size_t curridx = currmodel.idx;
+      vector<size_t> c = corr->getall( curridx );
+      if( c.size() != 1 )
+	{
+	  fprintf(stderr, "REV: SUPER ERROR in exec_w_corresp, trying to execute [%s] but model [%s]->[%s] is one-to-many (or zero) ([%lu])\n", toexec.c_str(), currmodel.model->buildpath().c_str(), m->buildpath().c_str(), c.size() );
+	  exit(1);
+	}
+      size_t newidx = c[0];
+      vector<elemptr> newtrace = trace;
+      elemptr tmpelem( m, newidx );
+      newtrace.push_back( tmpelem );
+
+      return DOCMD( toexec, newtrace, cmds );
+    }
+
+  fprintf(stderr, "REV: error exec w corresp reached end somehow\n");
+  exit(1);
+} //end exec_w_corresp
+
+
+elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace )
+{
+  
+  elemptr lastguy = get_curr_model(trace); //trace[trace.size()-1];
+  vector<elemptr> newtrace = trace;
+  newtrace.pop_back();
+  return lastguy.model->get_model_widx( parsearg, lastguy.idx, newtrace );
+}
+
+elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace )
+{
+  
+  elemptr lastguy = get_curr_model( trace );
+  vector<elemptr> newtrace = trace;
+  newtrace.pop_back();
+  return lastguy.model->get_containing_model_widx( parsearg, lastguy.idx, newtrace );
+}

@@ -69,13 +69,16 @@ using std::string;
 //forward decl struct symmodel
 struct symmodel;
 struct cmdstore;
+struct elemptr;
 
-
-typedef std::function< real_t( const string&, std::shared_ptr<symmodel>&, const cmdstore&, const size_t&, const size_t& ) > cmd_functtype;
+typedef std::function< real_t( const string&, const vector<elemptr>&, const cmdstore& ) > cmd_functtype;
 
 
 vector<string> parse( const string& name);
 vector<string> parsetypes( const string& name);
+
+
+
 
 
 struct symvar
@@ -98,38 +101,11 @@ struct symvar
     
   }
   
-  real_t getvalu( const size_t& idx )
-  {
-    if( !init )
-      {
-	return 0;
-      }
-    
-    if( idx >= valu.size() )
-      {
-	fprintf(stderr, "In symvar, getvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
-	exit(1);
-      }
-
-    return valu[idx];
-  }
-
-  void setvalu( const size_t& idx, const real_t& val )
-  {
-    if( !init )
-      {
-	//do nothing
-      }
-    
-    if( idx >= valu.size() )
-      {
-	fprintf(stderr, "In symvar, setvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
-	exit(1);
-      }
-
-    valu[idx] = val;
-  }
+  real_t getvalu( const size_t& idx );
   
+
+  void setvalu( const size_t& idx, const real_t& val );
+ 
   void reset()
   {
     read=0;
@@ -179,6 +155,74 @@ hole( const string& n, const std::shared_ptr<symmodel>& p )
   void add( const std::shared_ptr<symmodel>& h );
 
 }; //end struct hole
+
+
+struct elemptr
+{
+  std::shared_ptr<symmodel> model;
+  size_t idx;
+
+  elemptr( const std::shared_ptr<symmodel>& p, const size_t& i )
+  : model( p ), idx( i )
+  {
+  }
+};
+
+struct corresp
+{
+  std::shared_ptr<symmodel> targmodel;
+
+  bool init=false;
+
+  corresp()
+  {
+  }
+
+  corresp( const std::shared_ptr<symmodel>& t)
+  : targmodel( t )
+  {
+  }
+  
+  size_t get( const size_t& s, const size_t& offset )
+  {
+    vector<size_t> g = getall( s );
+    if( offset >= g.size() )
+      {
+	fprintf(stderr, "REV: error requested offset larger than size\n");
+	exit(1);
+      }
+    return g[ offset ];
+  }
+  
+  real_t getvar( const size_t& s, const symvar& var, const size_t& offset )
+  {
+    vector<real_t> gv = getallvar( s, var );
+    if(offset > gv.size())
+      {
+	fprintf(stderr, "REV: ERROR, getvar > offset\n");
+	exit(1);
+      }
+
+    return gv[ offset ];
+  }
+
+  void markinit()
+  {
+    init=true;
+  }
+  
+  bool initialized()
+  {
+    return init;
+  }
+  
+  //REV: user never does a raw GET, they only use GETVAR.
+  //However, creating new vect is a pain in the ass, so just return IDX directly
+  virtual vector<size_t> getall( const size_t& s ) = 0;
+  //virtual size_t get( const size_t& s, const size_t& offset ) = 0;
+  virtual vector<real_t> getallvar( const size_t& s, const symvar& var ) = 0;
+  //virtual real_t getvar( const size_t& s, const symvar& var, const size_t& offset ) = 0;
+}; //end struct corresp
 
 
 //stringify macro
@@ -258,128 +302,20 @@ struct cmdstore
     
 };
 
-std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ )
-{
-  std::shared_ptr<corresp> tmp;
-  
-  bool gotit = curr->getcorresp( targ, tmp );
-  if(!gotit)
-    {
-      fprintf(stderr, "ERROR in some function execution, could not find required corresp between models [%s] and [%s]\n", curr->buildpath().c_str(), targ->buildpath().c_str() );
-      exit(1);
-    }
-  
-  return tmp;
-}
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ );
 
-std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace )
-{
-  elemptr lastguy = get_curr_model(); //trace[trace.size()-1];
-  
-  return getcorresp( lastguy.model, targ );
-}
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace );
 
-elemptr get_curr_model( const vector<elemptr>& trace )
-{
-  if(trace.size() < 1)
-    {
-      fprintf(stderr, "REV: error in get_curr_model, trace is length 0\n");
-      exit(1);
-    }
-  return trace[ trace.size()-1 ];
-}
+elemptr get_curr_model( const vector<elemptr>& trace );
 
-bool check_cmd_is_multi( const string& s )
-{
-  const string mult = "MULTFORALL";
-  const string sum = "SUMFORALL";
-  if( s.compare( mult ) == 0 || s.comapre( sum ) == 0 )
-    {
-      return true;
-    }
-  return false;
-}
+bool check_cmd_is_multi( const string& s );
 
-real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds )
-{
-  //RE-parse toexec, to check what function it is.
-  //If it is one of the given functions, then we go.
-
-  vector<string> sanityparse = cmds.doparse( toexec );
-  if ( sanityparse.size() != 1 )
-    {
-      fprintf(stderr, "Sanity parse failed in execwcorresp, it is comma sep\n");
-      exit(1);
-    }
-  
-  vector<string> parsed = cmds.fparse( toexec );
-  if(parsed.size() < 1 || parsed[0].size() < 1)
-    {
-      fprintf(stderr, "ERROR: parsed size < 1 (or str len < 1). Exec [%s]\n", toexec.c_str());
-      exit(1);
-    }
-
-  
-  if( check_multi )
-    {
-      //Exec for all corresp.
-      //curr model is already pushed back. We need toarget model)
-      size_t arbitrary_idx = 666;
-      elemptr tmpelem( m, arbitrary_idx ); //idx is arbitrary
-      vector<elemptr> newtrace = trace;
-      newtrace.push_back( tmpelem );
-
-      //Note toexec is the whole thing passed, we didn't strip it.
-      //we are just handling it in a special way based on #args and pushing back to
-      //trace.
-      //DOCMD will strip the first part and execute it.
-      //In other words, in this csae it is sumforall, with one arg only.
-      //So, it will strip SUMFORALL, pass it in, and appropriately handle it
-      //as a DOCMDSUMCONNS
-      return DOCMD( toexec, newtrace, cmds );
-    }
-  else //Otherwise, I just execute it. But, in that, I make sure that
-    //the correspondence is not fucked up.
-    {
-      elemptr currmodel = get_curr_model();
-      std::shared_ptr<corresp> corr = getcorresp( currmodel.model, m );
-      size_t curridx = currmodel.idx;
-      vector<size_t> c = corr.getall( curridx );
-      if( c.size() != 1 )
-	{
-	  fprintf(stderr, "REV: SUPER ERROR in exec_w_corresp, trying to execute [%s] but model [%s]->[%s] is one-to-many (or zero) ([%lu])\n", toexec.c_str(), currmodel.model->buildtrace().c_str(), m->buildtrace().c_str(), c.size() );
-	  exit(1);
-	}
-      size_t newidx = c[0];
-      vector<elemptr> newtrace = trace;
-      elemptr tmpelem( m, newidx );
-      newtrace.push_back( tmpelem );
-
-      return DOCMD( toexec, newtrace, cmds );
-    }
-
-  fprintf(stderr, "REV: error exec w corresp reached end somehow\n");
-  exit(1);
-} //end exec_w_corresp
+real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds );
 
 
-elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace )
-{
-  
-  elemptr lastguy = get_curr_model(); //trace[trace.size()-1];
-  vector<elemptr> newtrace = trace;
-  newtrace.pop_back();
-  return lastguy.model->get_model_widx( parsearg, lastguy.idx, newtrace );
-}
+elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace );
 
-elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace )
-{
-  
-  elemptr lastguy = get_curr_model( trace );
-  vector<elemptr> newtrace = trace;
-  newtrace.pop_back();
-  return lastguy.model->get_containing_model_widx( parsearg, lastguy.idx, newtrace );
-}
+elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace );
 
 
 //#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
@@ -407,19 +343,10 @@ FUNCDECL(EXP);
 FUNCDECL(SUMFORALL);
 FUNCDECL(MULTFORALL);
 
-//real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t READ( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t SUM( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t NEGATE( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t SUMFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-//real_t MULTFORALL( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds );
-
-
+FUNCDECL(SUMFORALLHOLES);
+FUNCDECL(SUMFORALLCONNS);
+FUNCDECL(MULTFORALLHOLES);
+FUNCDECL(MULTFORALLCONNS);
 
 
 struct updatefunct_t
@@ -447,82 +374,22 @@ struct updatefunct_t
   {
     for(size_t c=0; c<lines.size(); ++c)
       {
-	DOCMD( lines[c], model, cmds, myidx );
+	
+	vector<elemptr> trace;
+	elemptr elem( model, myidx );
+	DOCMD( lines[c], trace, cmds );
       }
   }
 };
 
 
 
-struct elemptr
-{
-  std::shared_ptr<symmodel> model;
-  size_t idx;
 
-  elemptr( const std::shared_ptr<symmodel>& p, const size_t& i )
-  : model( p ), idx( i )
-  {
-  }
-};
 
 //REV: what to do when I make a circuit a submodel of another? Is it possible?
 //I guess. So, I guess all guys only go up until there is some "top model" type guy, which is different type or has a flag set.
 
-struct corresp
-{
-  std::shared_ptr<symmodel> targmodel;
 
-  bool init=false;
-
-  corresp()
-  {
-  }
-
-  corresp( const std::shared_ptr<symmodel>& t)
-  : targmodel( t )
-  {
-  }
-  
-  size_t get( const size_t& s, const size_t& offset )
-  {
-    vector<size_t> g = get( s );
-    if( offset >= g.size() )
-      {
-	fprintf(stderr, "REV: error requested offset larger than size\n");
-	exit(1);
-      }
-    return g[ offset ];
-  }
-  
-  real_t getvar( const size_t& s, const symvar& var, const size_t& offset )
-  {
-    vector<real_t> gv = getallvar( s, var );
-    if(offset > gv.size())
-      {
-	fprintf(stderr, "REV: ERROR, getvar > offset\n");
-	exit(1);
-      }
-
-    return gv[ offset ];
-  }
-
-  void markinit()
-  {
-    init=true;
-  }
-  
-  bool initialized()
-  {
-    return init;
-  }
-  
-  //REV: user never does a raw GET, they only use GETVAR.
-  //However, creating new vect is a pain in the ass, so just return IDX directly
-  virtual vector<size_t> getall( const size_t& s ) = 0;
-  //virtual size_t get( const size_t& s, const size_t& offset ) = 0;
-  virtual vector<real_t> getallvar( const size_t& s, const symvar& var ) = 0;
-  //virtual real_t getvar( const size_t& s, const symvar& var, const size_t& offset ) = 0;
-};
 
 
 //Are they re-ordered? Possibly...same size?
@@ -579,7 +446,7 @@ struct conn_corresp : public corresp
   
   std::vector<real_t> getallvar( const size_t& s, const symvar& var )
   {
-    std::vector<size_t> myidxs = get( s );
+    std::vector<size_t> myidxs = getall( s );
     std::vector<real_t> ret( myidxs.size() );
     for( size_t x=0; x<myidxs.size(); ++x )
       {
@@ -1196,7 +1063,7 @@ struct symmodel
 	size_t idx_in_submodel = idx; //no change, b/c submodel.
 	newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	
-	return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+	return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
       }
     else if( hlocs.size() >= 1 )
       {
@@ -1225,7 +1092,7 @@ struct symmodel
 	    size_t idx_in_submodel = idx; //no change, b/c submodel.
 	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	    
-	    return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+	    return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
 	  }
 	else
 	  {
@@ -1248,7 +1115,7 @@ struct symmodel
 	    //REV; SANITY, if corresp not allocated yet, just return 0.
 	    size_t idx_in_submodel = 0;
 	    //REV; Don't check this here, check this in the corresp struct? I.e. return dummy data if it is not existing yet (or exit?)
-	    if(mycorrep->initialized())
+	    if(mycorresp->initialized())
 	      {
 		vector<size_t> sanity = mycorresp->getall( idx );
 		if( sanity.size() != 1 )
@@ -1262,7 +1129,7 @@ struct symmodel
 	    vector<elemptr> newtrace = trace;
 	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
 
-	    return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+	    return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
 	  }
       }
     else
@@ -1280,9 +1147,7 @@ struct symmodel
 	    size_t idx_in_submodel = idx; //no change, b/c submodel.
 	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	    
-	    return nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
-	    
-	    nextmodel->get_model_widx( nparsed, idx_in_submodel, newtrace );
+	    return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
 	  }
 	else if(  parent && !(parent->parent) )
 	  {
@@ -1397,7 +1262,7 @@ struct symmodel
 
   bool is_toplevel()
   {
-    if(parent & parent->parent)
+    if(parent && parent->parent)
       {
 	return false;
       }
@@ -1428,7 +1293,7 @@ struct symmodel
 	    exit(1);
 	  }
       }
-    if(locs.size() > 1 )
+    if(loc.size() > 1 )
       {
 	fprintf(stderr, "REV weird more than one var of same name [%s]\n", s.c_str());
 	exit(1);
