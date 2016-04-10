@@ -315,7 +315,7 @@ real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel
 
 elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace );
 
-elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace );
+elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace, string& varname );
 
 
 //#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
@@ -377,6 +377,7 @@ struct updatefunct_t
 	
 	vector<elemptr> trace;
 	elemptr elem( model, myidx );
+	trace.push_back( elem );
 	DOCMD( lines[c], trace, cmds );
       }
   }
@@ -431,6 +432,12 @@ struct conn_corresp : public corresp
 {
   std::vector<size_t> getall( const size_t& s )
   {
+    //DUMMY
+    if(!init)
+      {
+	return vector<size_t>( 1, 0 );
+      }
+    
     if( s >= startidx.size() )
       {
 	fprintf(stderr, "ERROR in get in conn_corresp, s >= startidx size\n");
@@ -439,7 +446,7 @@ struct conn_corresp : public corresp
     
     size_t start = startidx[s];
     size_t size = numidx[s];
-    return std::vector<size_t>( correspondence.begin()+start, correspondence.begin()+start+size);
+    return vector<size_t>( correspondence.begin()+start, correspondence.begin()+start+size);
   }
 
 
@@ -536,6 +543,7 @@ struct symmodel
   
   bool getcorresp( const std::shared_ptr<symmodel>& targ, std::shared_ptr<corresp>& c )
     {
+      fprintf(stdout, "Looking for corresp between [%s] and [%s]\n", buildpath().c_str(), targ->buildpath().c_str());
       std::shared_ptr<symmodel> thistop = get_toplevel_model();
       std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
       
@@ -601,26 +609,22 @@ struct symmodel
     newmodel->localname="__ERROR_MODEL_LOCALNAME_UNSET";
     //type is same
 
-    //need to make new vars. Make sure parent points correctly.
-    //vector<std::shared_ptr<symvar>> oldvars = newmodel->vars;
-    //newmodel->vars.clear();
-    for(size_t v=0; v<newmodel->vars.size(); ++v )
-      {
-	//auto newvar = std::make_shared<symvar>( );
-	newmodel->vars[v]->parent = newmodel;
+    //COPY UPDATE FUNCTD
+    newmodel->updatefunct.model = newmodel;
 
-	//newmodel->vars[v]->valu.clear(); //clear valu? if it had size, it is fucked.
+    vector< std::shared_ptr<symvar> > newvararray = newmodel->vars;
+    newmodel->vars.clear();
+    //VARIABLES ARE NOW SHARED PTRS, I NEED TO MAKE NEW ONES
+    for(size_t v=0; v<newvararray.size(); ++v )
+      {
+	newmodel->vars.push_back( std::make_shared<symvar>( newvararray[v]->name, newvararray[v]->type, newmodel ) );
       }
+
+    //Done
     
     vector<std::shared_ptr<symmodel>> oldsubmodels = newmodel->models;
     newmodel->models.clear();
 
-    if( correspondences.size() > 0 )
-      {
-	fprintf(stderr, "REV: ERROR in CLONE, cloning but model clone of correspondences is not implemented! Do it!\n");
-	exit(1);
-      }
-    
     for(size_t m=0; m<oldsubmodels.size(); ++m )
       {
 	//REV: These are model pointers to OLD model locations. I need to do a deep copy for each one.
@@ -641,6 +645,12 @@ struct symmodel
 	newmodel->holes[h].external.clear();
       }
 
+    if( correspondences.size() > 0 )
+      {
+	fprintf(stderr, "REV: ERROR in CLONE, cloning but model clone of correspondences is not implemented! Do it!\n");
+	exit(1);
+      }
+    
     return newmodel;
   }
   
@@ -998,13 +1008,13 @@ struct symmodel
   //Once I get the symvar, I can use symvar->parent to get actual containing model ;) OK, great.
 
   
-  elemptr get_containing_model_widx( const string& unparsed, const size_t& idx, const vector<elemptr>& trace )
+  elemptr get_containing_model_widx( const string& unparsed, const size_t& idx, const vector<elemptr>& trace, string& varname )
   {
     vector<string> parsed = parse( unparsed );
-    return get_containing_model_widx( parsed, idx, trace );
+    return get_containing_model_widx( parsed, idx, trace, varname );
   }
   
-  elemptr get_containing_model_widx( const vector<string>& parsed, const size_t& idx, const vector<elemptr>& trace )
+  elemptr get_containing_model_widx( const vector<string>& parsed, const size_t& idx, const vector<elemptr>& trace, string& varname )
   {
     if(parsed.size() < 1)
       {
@@ -1012,10 +1022,10 @@ struct symmodel
 	exit(1);
       }
     vector<string> popped = parsed;
-    string varname = popped[ popped.size()-1 ];
+    varname = popped[ popped.size()-1 ];
     popped.pop_back();
-
-    return get_model_widx( parsed, idx, trace );
+    
+    return get_model_widx( popped, idx, trace );
     //I now need to find that model, which better contain var...
     //Note, will looking for a var bubble back up? Only in var name? Or..?
   }
@@ -1026,18 +1036,42 @@ struct symmodel
     return get_model_widx( parsed, idx, trace );
   }
   
+
+
+
+  //So, first, containing model was presyn-gAMPA. Fine.
+  //It says, oh shit, in me, there is a hole!
+  //The hole is presyn-gAMPA! So, I go through the hole!
+
+
+  //Walk through it.
+  //update ADEX/gAMPA1.
+  //I need to iter through presyn
+  //So, I go into syn2-1/
+  //In syn2-1, i get e.g. syn2-1/Glu_syn/hitweight. That is fine.
+  //The issue comes when I then try to access (from inside syn2-1), gAMPA1 value.
+  //Specifically I try to access postsyn-gAMPA/affinity.
+  //Of course, in there..it can never find it? Fuck, infinite loop?
+  //Set a breadcrumb for sanity to check state loops...
+  
   //I am searching for the solution to MODEL1/HOLE1/HOLE2/MODEL3, etc., given start idx (beginning of trace)
   elemptr get_model_widx( const vector<string>& parsed, const size_t& idx, const vector<elemptr>& trace )
   {
     //same as get_model, but I always keep index around at each point, and when I return, I return a model and an index
 
+    
     //I start with it already parsed.
     //If parsed.size() == 0, I simply return this (with an index?)
     if( parsed.size() == 0)
       {
-	return elemptr( shared_from_this(), idx );
+	fprintf(stdout, "FOUND MODEL! [%s]\n", buildpath().c_str() );
+	elemptr t = elemptr( shared_from_this(), idx );
+	return t;
       }
-
+    else
+      {
+	fprintf(stdout, "Model [%s], attempting to find model name [%s] widx\n", buildpath().c_str(), CAT(parsed, "/").c_str());
+      }
     //This is the next model I will go into
     string submodel = parsed[0];
     vector<string> remainder( parsed.begin()+1, parsed.end() ); //same as remainder, remainder.erase(0);
@@ -1054,14 +1088,20 @@ struct symmodel
 	    fprintf(stderr, "WTF found more than one in getmodelwidx\n");
 	    exit(1);
 	  }
+	
 	size_t mloc = mlocs[0];
 	//add model to trace? I guess? It is a submodel, so it is not necessary I guess? But it helps it find submodels I guess? Could this cause a problem?
 
-	std::shared_ptr<symmodel> nextmodel = models[mloc];
+	fprintf(stdout, "Model [%s], going through submodel [%s] to find [%s]\n", buildpath().c_str(), models[mloc]->localname.c_str(), CAT(remainder, "/").c_str() );
 	
+	std::shared_ptr<symmodel> nextmodel = models[mloc];
+
+	//Don't add to trace because if same model, parent will cause infinite loop in combin with trace.
+	//However
+	//Problem is if I go through a hole, and the hole is the same model, that is the main problem
 	vector<elemptr> newtrace = trace;
 	size_t idx_in_submodel = idx; //no change, b/c submodel.
-	newtrace.push_back( elemptr( shared_from_this(), idx ) );
+	//newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	
 	return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
       }
@@ -1072,37 +1112,31 @@ struct symmodel
 	    fprintf(stderr, "WTF more than one HOLE found in getmodelwidx\n");
 	    exit(1);
 	  }
+	
 
 	size_t hloc = hlocs[0];
+	fprintf(stdout, "Model [%s], going through hole [%s] to find [%s]\n", buildpath().c_str(), holes[hloc].name.c_str(), CAT(remainder, "/").c_str());
 	if( holes[ hloc ].members.size() != 1 )
 	  {
 	    fprintf(stderr, "ERROR in get_model_widx, getting [%s] from HOLE, but hole [%s] has size [%lu], but it should be 1\n", submodel.c_str(), holes[hloc].name.c_str(), holes[hloc].members.size() );
 	    exit(1);
 	  }
-
-	//REV: At this point we need to be careful. We need to go through a correspondence if it is an external model. Maybe if it is an internal one. Not for now.
-
+	
 	std::shared_ptr<symmodel> nextmodel = holes[hloc].members[0];
-	//Will this ever happen? I search submodels first, so probably not?
-	//Note, this is not iterating UP the tree to find model names??? Shit...
-	//If I do that, what happens? It eventually never finds it?
+	
 	if( check_same_toplevel_model( nextmodel ) )
 	  {
+	    //Dont add to trace because its same model so infinite loop with going to parent.x
 	    vector<elemptr> newtrace = trace;
 	    size_t idx_in_submodel = idx; //no change, b/c submodel.
-	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
+	    //newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	    
 	    return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
 	  }
-	else
+	else //not same toplevel model
 	  {
 	    //I NEED TO GO THROUGH A CORRESPONDENCE
-	    //If I find it, but the corresp has multiple answers for me, then I quit.
-	    //Note, index should specify which one to get directly right?
-	    //FUCK FUCK NO NO NO IT WONT, bc ill tell it which one to get, and it
-	    //will get it directly? No that will work...as long as I dont try to
-	    //access it as e.g. BLAH/BLAH/MULTIVAR
-
+	    
 	    std::shared_ptr<corresp> mycorresp;
 	    bool exists = getcorresp( nextmodel, mycorresp );
 	    if( !exists )
@@ -1131,14 +1165,11 @@ struct symmodel
 
 	    return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
 	  }
-      }
+      } //end if not found in HOLES (or submodels)
     else
       {
+	fprintf(stdout, "Model [%s], walking up to parent [%s] to find [%s]\n", buildpath().c_str(), parent->localname.c_str(), CAT(parsed, "/").c_str());
 	//Else, try to bubble up to ROOT.
-	//If I'm at root, I try to find in trace? Fuck...
-	//It will try to match every sub-fucking model until it finds one lol.
-	//If I try to bubble up to root, do I add it to the stream in the same way?
-	//I guess so, same as a submodel heh...
 	if( parent && (parent->parent) )
 	  {
 	    std::shared_ptr<symmodel> nextmodel = parent;
@@ -1147,42 +1178,55 @@ struct symmodel
 	    size_t idx_in_submodel = idx; //no change, b/c submodel.
 	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	    
-	    return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
+	    return nextmodel->get_model_widx( parsed, idx_in_submodel, newtrace );
 	  }
 	else if(  parent && !(parent->parent) )
 	  {
 	    //ONLY if size of trace is zero do we exit?
-	    if(trace.size() == 0)
+	    if( trace.size() == 0 )
 	      {
 		fprintf(stderr, "REV: Error, could not find in get_model_widx, even by bubbling up parents, or by jumping back model trace\n");
 		exit(1);
-		  
 	      }
 	  }
 	else
 	  {
-	    fprintf(stderr, "REV; this should never happen weird, parent->parent but not parent. Exit\n");
+	    fprintf(stderr, "REV; this should never happen weird, Neither parent nor parent->parent? In searching for model with idx. Exit\n");
+	    if( parent )
+	      {
+		fprintf( stderr, "Parent of me [%s] exists and is [%s]\n", buildpath().c_str(), parent->buildpath().c_str() );
+	      }
+	    else
+	      {
+		fprintf( stderr, "Parent does not exist... (note current model is [%s])!\n", buildpath().c_str() );
+	      }
 	    exit(1);
 	  }
       } //couldn't find in "else" (i.e. not in this model, so try bubbling up parents)
-
+    
     if(trace.size() == 0)
       {
-	fprintf(stderr, "Trace size zero\n");
+	fprintf(stderr, "Trace size zero. This should never happen (should have been caught above)\n");
 	exit(1);
       }
+
+    //REV: Did I mess something up? First it should check through all guys directly to see if it is same model? I.e. if target model matches b/c we can use that idx.
+    fprintf(stdout, "Couldn't find model [%s] in previous model trace [%s], so moving to next! (trace size is [%lu])\n", CAT(parsed,"/").c_str(), buildpath().c_str(), trace.size() );
+    
     //Move back model and try again?
     vector<elemptr> newtrace = trace;
-    size_t idx_in_submodel = trace[ newtrace.size() - 1].idx; //end of trace.
-    std::shared_ptr<symmodel> nextmodel = trace[ newtrace.size() - 1].model;
+    size_t idx_in_submodel = newtrace[ newtrace.size() - 1].idx; //end of trace.
+    std::shared_ptr<symmodel> nextmodel = newtrace[ newtrace.size() - 1].model;
     newtrace.pop_back();
 
+    fprintf(stdout, "Will now try to run with new trace size [%lu]\n", newtrace.size() );
     return nextmodel->get_model_widx( parsed, idx_in_submodel, newtrace );
     
-  }
+  } //end get_model_widx
   
   //REV: This finds "variable" inside a model? Or it finds model?
   //REV; This "BUBBLES" all the way up to root! Note, it should only bubble to root-1
+  //If model name is "", will it bubble up? No it will just return this heh.
   std::shared_ptr<symmodel> get_model( const vector<string>& parsed )
   {
     if( parsed.size() == 0 ) //< 1 )
@@ -1274,22 +1318,23 @@ struct symmodel
   
   
   //REV: meh these should be shared ptrs too?
-  std::shared_ptr<symvar> getvar( const string& s )
+  std::shared_ptr<symvar> getvar_widx( const string& s, const size_t& idx, const vector<elemptr>& trace )
   {
     //std::vector<string> parsed = parse( s );
     string varname;
-    std::shared_ptr<symmodel> containingmodel = get_containing_model( s, varname );
-    vector<size_t> loc = containingmodel->get_varloc( varname );
-
+    elemptr containingmodel = get_containing_model_widx( s, idx, trace, varname );
+    fprintf(stdout, "getvar widx: found containing model for var [%s] (model is [%s])\n", s.c_str(), containingmodel.model->buildpath().c_str());
+    vector<size_t> loc = containingmodel.model->get_varloc( varname );
+    //fprintf(stdout, "REV: doen getting varloc of requested var, size  is [%lu]\n", loc.size() );
     if(loc.size() == 0 )
       {
 	if( parent )
 	  {
-	    return parent->getvar( s );
+	    return parent->getvar_widx( s, idx, trace );
 	  }
 	else
 	  {
-	    fprintf(stderr, "GETVAR, could not get variable through model hierarchy. Note I am now at root level so I do not kn ow model name...[%s]\n", s.c_str());
+	    fprintf(stderr, "GETVAR, could not get variable through model hierarchy. Note I am now at root level so I do not know model name...[%s]\n", s.c_str());
 	    exit(1);
 	  }
       }
@@ -1300,19 +1345,19 @@ struct symmodel
       }
 
     //actualcontaining = shared_from_this();
-    return vars[ loc[0] ];
+    return containingmodel.model->vars[ loc[0] ];
   }
 
-  std::shared_ptr<symvar> readvar( const string& s )
+  std::shared_ptr<symvar> readvar_widx( const string& s, const size_t& idx, const vector<elemptr>& trace )
   {
-    //std::shared_ptr<symmodel> tmp;
-    getvar( s )->readvar();
-    return getvar(s);
+    std::shared_ptr<symvar> tmp = getvar_widx(s, idx, trace);
+    tmp->readvar();
+    return tmp;
   }
 
-  void setvar( const string& s, const real_t& v )
+  void setvar_widx( const string& s, const real_t& v, const size_t& idx, const vector<elemptr>& trace )
   {
-    getvar( s )->writevar();
+    getvar_widx( s, idx, trace )->writevar();
     return;
   }
 
@@ -1360,9 +1405,10 @@ struct symmodel
   //Variables "written" in update function
   //Verified location. Since I only reference "foreign models", I need to know which ones I will actually read/write and ensure they exist ;)
 
+  
   //Enumerates all (at a global scope) variables, and recursively does it for all my sub-models
   //All holes which are filled by models, have their global scope printed too.
-  void check_and_enumerate( size_t depth = 0 )
+  void check_and_enumerate( size_t depth , bool checkupdate )
   {
     prefixprint( depth );
     fprintf( stdout, "MODEL [%s] (modelnametype [%s])\n", localname.c_str(), name.c_str() );
@@ -1391,19 +1437,25 @@ struct symmodel
 	  }
       }
 
-    prefixprint( depth );
-    fprintf(stdout, "++checking update function for variable reference resolution\n");
-    check_update_funct();
-    
+    prefixprint(depth);
+    if( checkupdate )
+      {
+	fprintf(stdout, "++checking update function for variable reference resolution\n");
+	check_update_funct(); //does for "this" model..
+      }
+    else
+      {
+	fprintf(stdout, "++SKIPPING checking update function for variable reference resolution\n");
+      }
     prefixprint( depth );
     fprintf(stdout, "=SUBMODELS:\n");
     for(size_t subm=0; subm<models.size(); ++subm)
       {
 	size_t jump=5;
-	models[subm]->check_and_enumerate( depth+jump );
+	models[subm]->check_and_enumerate( depth+jump , checkupdate);
       }
     
-
+    
   } //end check_and_enumerate
   
 }; //end STRUCT SYMMODEL

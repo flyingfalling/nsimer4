@@ -26,6 +26,8 @@ FUNCDECL(DOCMD)
       fprintf(stderr, "REV: cmd parsed is not size one in DOCMD\n");
       exit(1);
     }
+
+  
   
   vector<string> functparse = cmds.fparse( arg );
   string fname = functparse[0]; //name of registered function in cmdstore that iI will be calling
@@ -34,6 +36,8 @@ FUNCDECL(DOCMD)
   vector<string> fargs = functparse; //array of string args I will pass as arg to fname
   
   string newarg = CAT( fargs, "," ); //array of string args as single string...
+
+  fprintf(stdout, "Model [%s]: DOCMD [%s] (arg [%s])\n", get_curr_model(trace).model->buildpath().c_str(), fname.c_str(), newarg.c_str());
   
   cmd_functtype execfunct;
   bool found = cmds.findfunct( fname, execfunct );
@@ -80,6 +84,7 @@ FUNCDECL(DOCMD)
 //I'm iterating through the idx HERE, and passing those idx in the sub-function. So it is using those to search for all members in there I guess. Fine.
 FUNCDECL(READ)
 {
+  fprintf( stdout, "Executing READ arg: [%s]\n", arg.c_str() );
   //This parses into variable name!!!
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
@@ -91,11 +96,20 @@ FUNCDECL(READ)
   string varname = parsed[0];
   
   //"I" am the reading model. SO, I need to do model ->get
-    
+  string vartail;
+
+  //REV: wait, what the fuck? It should call from "here" (i.e. from tail), not from 
   
   //std::shared_ptr<symmodel> contmodel = get_containing_model_widx( varname, trace );
-  elemptr ep = get_containing_model_widx( varname, trace );
-  std::shared_ptr<symvar> var = ep.model->getvar( varname );
+  //elemptr ep = get_containing_model_widx( varname, trace, vartail );
+  elemptr ep = get_curr_model(trace);
+  std::shared_ptr<symvar> var = ep.model->getvar_widx( varname, ep.idx, trace );
+  fprintf(stdout, "REV: finished getting it, checking parent...\n");
+  if(!var->parent)
+    {
+      fprintf(stderr, "REV wtf var doesn't have parent?\n");
+      exit(1);
+    }
   std::shared_ptr<symmodel> contmodel = var->parent; //haha, true containing model... implies it stepped up  hierarchy some.
   
   std::shared_ptr<corresp> corr = getcorresp( contmodel, trace );
@@ -114,6 +128,7 @@ FUNCDECL(READ)
 //real_t SET( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(SET)
 {
+  fprintf( stdout, "Executing SET arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 2 )
     {
@@ -125,9 +140,11 @@ FUNCDECL(SET)
   
   string varname = parsed[0];
 
+  string vartail;
   //std::shared_ptr<symmodel> contmodel = get_containing_model_widx( varname, trace );
-  elemptr ep = get_containing_model_widx( varname, trace );
-  std::shared_ptr<symvar> var = ep.model->getvar( varname );
+  //elemptr ep = get_containing_model_widx( varname, trace, vartail );
+  elemptr ep = get_curr_model(trace);
+  std::shared_ptr<symvar> var = ep.model->getvar_widx( varname, ep.idx, trace );
   std::shared_ptr<symmodel> contmodel = var->parent; //haha, true containing model... implies it stepped up  hierarchy some.
   
   std::shared_ptr<corresp> corr = getcorresp( contmodel, trace );
@@ -142,6 +159,7 @@ FUNCDECL(SET)
 //Only other time I have to worry about idx, is when I do "forall"
 FUNCDECL(SUM)
 {
+  fprintf( stdout, "Executing SUM arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
     { exit(1); }
@@ -161,6 +179,7 @@ FUNCDECL(SUM)
 //real_t MULT( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(MULT)
 {
+  fprintf( stdout, "Executing MULT arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
     { exit(1); }
@@ -180,6 +199,7 @@ FUNCDECL(MULT)
 //real_t DIV( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(DIV)
 {
+  fprintf( stdout, "Executing DIV arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
     { exit(1); }
@@ -201,6 +221,7 @@ FUNCDECL(DIV)
 //real_t DIFF( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(DIFF)
 {
+  fprintf( stdout, "Executing DIFF arg: [%s]\n", arg.c_str() );
   //subtract all from first one?
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
@@ -221,6 +242,7 @@ FUNCDECL(DIFF)
 //real_t NEGATE( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(NEGATE)
 {
+  fprintf( stdout, "Executing NEGATE arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     { exit(1); }
@@ -233,6 +255,7 @@ FUNCDECL(NEGATE)
 //real_t EXP( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(EXP)
 {
+  fprintf( stdout, "Executing EXP arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     { exit(1); }
@@ -245,6 +268,7 @@ FUNCDECL(EXP)
 
 FUNCDECL( SUMFORALL )
 {
+  fprintf( stdout, "Executing SUMFORALL arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   
   if(parsed.size() == 2 )
@@ -265,6 +289,7 @@ FUNCDECL( SUMFORALL )
 
 FUNCDECL( SUMFORALLHOLES )
 {
+  fprintf( stdout, "Executing SUMFORALLHOLES arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
 
   if( parsed.size() != 2 )
@@ -291,6 +316,7 @@ FUNCDECL( SUMFORALLHOLES )
 
 FUNCDECL( SUMFORALLCONNS )
 {
+  fprintf( stdout, "Executing SUMFORALLCONNS arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg ); //Make sure it is a legal statement (i.e. not args comma sep)
   if( parsed.size() != 1 )
     {
@@ -328,6 +354,7 @@ FUNCDECL( SUMFORALLCONNS )
 
 FUNCDECL( MULTFORALL )
 {
+  fprintf( stdout, "Executing MULTFORALL arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   
   if(parsed.size() == 2 )
@@ -348,6 +375,7 @@ FUNCDECL( MULTFORALL )
 
 FUNCDECL( MULTFORALLHOLES )
 {
+  fprintf( stdout, "Executing MULTFORALLHOLES arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg ); //For sumforall, it will only expect 2 arguments.
 
   if( parsed.size() != 2 )
@@ -374,6 +402,7 @@ FUNCDECL( MULTFORALLHOLES )
 
 FUNCDECL( MULTFORALLCONNS )
 {
+  fprintf( stdout, "Executing MULTFORALLCONNS arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg ); //Make sure it is a legal statement (i.e. not args comma sep)
   if( parsed.size() != 1 )
     {
@@ -480,6 +509,7 @@ void symvar::setvalu( const size_t& idx, const real_t& val )
   if( !init )
     {
       //do nothing
+      return;
     }
     
   if( idx >= valu.size() )
@@ -489,6 +519,7 @@ void symvar::setvalu( const size_t& idx, const real_t& val )
     }
 
   valu[idx] = val;
+  return;
 }
 
 
@@ -606,11 +637,11 @@ elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace )
   return lastguy.model->get_model_widx( parsearg, lastguy.idx, newtrace );
 }
 
-elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace )
+elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace, string& varname )
 {
   
   elemptr lastguy = get_curr_model( trace );
   vector<elemptr> newtrace = trace;
   newtrace.pop_back();
-  return lastguy.model->get_containing_model_widx( parsearg, lastguy.idx, newtrace );
+  return lastguy.model->get_containing_model_widx( parsearg, lastguy.idx, newtrace, varname );
 }
