@@ -97,6 +97,7 @@ void test_build()
   gNMDA->addhole( "presyn" );
   
 
+  //gNMDA->add_to_updatefunct( "SET(g, SUM(g, SUMFORALL(presyn, SUMFORALL(MULT(Glu_syn/hitweight, Glu_syn/postsyn-gNMDA/affinity) ) ) ) )" );
   gNMDA->add_to_updatefunct( "SET(g, SUM(g, SUMFORALL(presyn, SUMFORALL(MULT(Glu_syn/hitweight, Glu_syn/postsyn-gNMDA/affinity) ) ) ) )" );
   gNMDA->add_to_updatefunct( "SET(g, MULT(g, EXP( NEGATE( tau1 ) ) ) )" );
   

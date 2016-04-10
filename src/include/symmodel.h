@@ -9,6 +9,8 @@
 //Note, when it goes and constructs the "children", it needs to set to me.
 
 
+//REV: TODO, make it so that unique sub-name variables (models) can be read directly...will cause massive headaches for holes though ;)
+
 
 //REV: At any rate, first, make sure that all correspondences are checked ;)
 //How about for "recursive" access of guys? Will that ever happen?
@@ -1070,7 +1072,7 @@ struct symmodel
       }
     else
       {
-	fprintf(stdout, "Model [%s], attempting to find model name [%s] widx\n", buildpath().c_str(), CAT(parsed, "/").c_str());
+	fprintf(stdout, "Model [%s], attempting to find model name [%s] widx (note, trace size is [%lu])\n", buildpath().c_str(), CAT(parsed, "/").c_str(), trace.size());
       }
     //This is the next model I will go into
     string submodel = parsed[0];
@@ -1176,7 +1178,7 @@ struct symmodel
 	    
 	    vector<elemptr> newtrace = trace;
 	    size_t idx_in_submodel = idx; //no change, b/c submodel.
-	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
+	    //newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	    
 	    return nextmodel->get_model_widx( parsed, idx_in_submodel, newtrace );
 	  }
