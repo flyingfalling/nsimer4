@@ -15,6 +15,12 @@ vector<string> parsetypes( const string& name)
   return tokenize_string( name, "|", emptyrepeats );
 }
 
+vector<string> parsecorr( const string& name)
+{
+  bool emptyrepeats=false;
+  return tokenize_string( name, "->", emptyrepeats );
+}
+
 
 //real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
 FUNCDECL(DOCMD)

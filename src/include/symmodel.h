@@ -1,3 +1,7 @@
+//TODO: add way to specify things to do at end/beginning of turn (for example, setting V[t-1] to V[t].)
+//TODO: add way to automatically determine dependencies among variables for update purposes (based on read/write during each update line of each model).
+
+
 //REV: insteresting problem, since I am making "types" (items) it is literally getting a pointer to it rather than copying it.
 //If I just had an object, it would do the full object copy.
 //So, either I need the "constructor" for the object instances to build the appropriate structure
@@ -55,6 +59,7 @@
 #include <commontypes.h>
 #include <fparser.h>
 #include <parsehelpers.h>
+#include <generator.h>
 
 #include <sys/types.h>
 #include <vector>
@@ -97,10 +102,10 @@ struct symvar
   std::shared_ptr<symmodel> parent;
 
   bool init=false;
-  
-  real_t& get( const size_t& idx )
+
+  bool isinit()
   {
-    
+    return init;
   }
   
   real_t getvalu( const size_t& idx );
@@ -214,6 +219,11 @@ struct corresp
   }
   
   bool initialized()
+  {
+    return init;
+  }
+
+  bool isinit()
   {
     return init;
   }
@@ -376,7 +386,6 @@ struct updatefunct_t
   {
     for(size_t c=0; c<lines.size(); ++c)
       {
-	
 	vector<elemptr> trace;
 	elemptr elem( model, myidx );
 	trace.push_back( elem );
@@ -516,7 +525,85 @@ struct symmodel
   vector<hole> holes;
 
   std::vector< std::shared_ptr<corresp> > correspondences;
+
+  size_t modelsize = 0; //All models have size? It is shared by all submodels and parent models.
+
+
+  //REV: where are generators stored? I assume in this model?
+  //Or are all generators stored in a single location?
+  //But we won't use them again, we need to separate generation of size, generation of values, and
+  //reset()
+  //If size() not specified, problem, error!
+  //If values() gen not specified, it is assumed that size solved that issue? I.e. co-generated?
+  //But, then we can't re-draw.
+  //If reset() not specified, uh, error!
+  void set_var_gen( const string& varname, const generator& g )
+  {
+    //Find var, do it.
+  }
+
+  void set_corr_gen( const string& varname, const generator& g )
+  {
+    
+  }
+
+  bool checkready()
+  {
+    bool ready=true;
+    if( !checkcorrready() )
+      {
+	ready = false;
+      }
+    if( !checkvarsready() )
+      {
+	ready = false;
+      }
+    return ready;
+  }
   
+  bool checkcorrready()
+  {
+    bool corrready=true;
+    for(size_t v=0; v<correspondences.size(); ++v)
+      {
+	if( !correspondences[v]->isinit() )
+	  {
+	    fprintf(stderr, "WARNING: checkcorrready(): model [%s] to model [%s] correspondence is not ready\n", buildpath().c_str(), correspondences[v]->targmodel->buildpath().c_str(), vars[v]->name.c_str() );
+	    corrready=false;
+	  }
+      }
+    //for all vars, for all corresp, are init?
+    for( size_t m=0; m<models.size(); ++m)
+      {
+	if( !models[m]->checkcorrready() )
+	  {
+	    corrready=false;
+	  }
+      }
+    return corrready;
+  }
+  
+  bool checkvarsready()
+  {
+    bool varsready=true;
+    for(size_t v=0; v<vars.size(); ++v)
+      {
+	if( !vars[v]->isinit() )
+	  {
+	    fprintf(stderr, "WARNING: checkvarsready(): model [%s] var [%s] not ready\n", buildpath().c_str(), vars[v]->name.c_str() );
+	    varsready=false;
+	  }
+      }
+    //for all vars, for all corresp, are init?
+    for( size_t m=0; m<models.size(); ++m)
+      {
+	if( !models[m]->checkvarsready() )
+	  {
+	    varsready=false;
+	  }
+      }
+    return varsready;
+  }
   
   //Check that this is not top level?
   //When 'adding' hole, (holes are never added from holes)
@@ -1315,8 +1402,31 @@ struct symmodel
     return true;
   }
 
-
+  size_t get_modelsize()
+  {
+    auto toplevel = get_toplevel_model();
+    return toplevel->modelsize;
+  }
   
+  void update()
+  {
+    //For all members, execute? And for all submodels
+    for( size_t x=0; x<get_modelsize(); ++x)
+      {
+	updatefunct.execute(x);
+      }
+    
+    for(size_t subm=0; subm<models.size(); ++subm )
+      {
+	models[subm]->update();
+      }
+
+    //Note this is not updating a single "x" at a time?
+    //E.g. first adex1[1], then gAMPA1[1], then gNMDA[1], then after all that is
+    //done, it does adex1[2], etc.
+    //All parts should be able to be done asynchronously with no ill effects.
+    
+  }
   
   
   //REV: meh these should be shared ptrs too?
@@ -1463,6 +1573,9 @@ struct symmodel
 }; //end STRUCT SYMMODEL
 
 
+//Make a "models list"
+
+//get model "by name" for copying purposes? I.e. by type like thing.
 
 
 //EOF symmodel.h

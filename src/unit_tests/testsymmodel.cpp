@@ -66,7 +66,7 @@
 
 //Note, when I construct something, I will specify root symmodel, e.g. sc1 in this case.
 
-void test_build()
+std::shared_ptr<symmodel> test_build()
 {
   auto pos3d = symmodel::Create("pos3d", "3dposition|location|um" );
   pos3d->addvar( "x", "xdimension|um" );
@@ -218,15 +218,19 @@ void test_build()
     
   sc->check_and_enumerate(0, false);
   sc->check_and_enumerate(0, true);
-  fprintf(stdout, "Done: SUCCESS\n");
-  exit(1);
+  fprintf(stdout, "Done checking/enumerating: SUCCESS\n");
+
+  return sc;
+  
 }
 
 
 
 int main()
 {
-  test_build();
+  auto sc = test_build();
 
+
+  //I will now specify generators for all SC variables.
   
 }
