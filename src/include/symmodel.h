@@ -1,3 +1,7 @@
+//REV: 4 Apr 2016
+//symmodel.h
+//Symbolic model struct and helpers.
+
 //TODO: add way to specify things to do at end/beginning of turn (for example, setting V[t-1] to V[t].)
 //TODO: add way to automatically determine dependencies among variables for update purposes (based on read/write during each update line of each model).
 //TODO: make options so that I can do "even" updates i.e. spike schedulers.
