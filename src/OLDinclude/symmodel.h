@@ -30,8 +30,6 @@ using std::string;
 struct symmodel;
 struct cmdstore;
 struct elemptr;
-struct varptr;
-
 
 typedef std::function< real_t( const string&, const vector<elemptr>&, const cmdstore& ) > cmd_functtype;
 
@@ -40,80 +38,8 @@ vector<string> parse( const string& name);
 vector<string> parsetypes( const string& name);
 
 
-//Return a raw vect of these?
-//Need to be careful in GPU memory, won't pass global memory around. It would need to globally allocated to stack and
-//referenced some how, for each implementation...? At "spread" time. Fuck.
-struct varptr
-{
-  vector<real_t> valu;
-  vector<size_t> idx; //necessary?
-};
-
-struct globalstore
-{
-  vector< std::shared_ptr<symmodel> > models;
-
-  void add( std::shared_ptr<symmodel>& m )
-  {
-    models.push_back( m );
-  }
-
-  void addempty( const string& localname )
-  {
-    models.push_back( symmodel::Create( "", "", localname ) );
-  }
-
-  //find model type thing. Only first level ;)
-
-  vector<size_t> modellocs( const string& s )
-  {
-    vector<size_t> loc;
-    for( size_t m=0; m<models.size(); ++m )
-      {
-	if( models[m]->localname.compare( s ) == 0 )
-	  {
-	    loc.push_back( m );
-	  }
-      }
-    return loc;
-  }
-  
-  std::shared_ptr<symmodel> findmodel( const string& s )
-  {
-    vector<size_t> found = modellocs( s );
-    if( found > 1 )
-      {
-	fprintf(stderr, "REV error in find model in GLOBAL STORE, found more than one examples of model [%s]\n", s.c_str() );
-	exit(1);
-      }
-    
-    std::shared_ptr<symmodel> foundguy;
-    //just get this model, right now ;) It will be a var in a model I assume.
-    if( found.size() == 1)
-      {
-	foundguy = models[ found[0] ];
-      }
-
-    return foundguy; //may be null if not found ;)
-  } //end findmodel
 
 
-  //How about like, GET VAR. All models have only a single variable I guess?
-  //So, we simply get that VAR?
-  //Do I literally return the var? Do I return the corresp to that var?
-  //I am accessing it FROM a source model (possibly via holes). What item to I
-  //access it from? I basically have SRC model, TARG model, corresp between
-  //the models. I always assume it is IDENTITY or BLAH if src is one inside
-  //GLOBALSTORE. Ah.... AH! make globalstore sym model ;)
-  //Otherwise, corresp must exist ;) Makes it so much easier haha.
-  //To um, ensure that
-
-  //Whenever I try to resolve a variable, I do it like, globally. Main model, and um, "corresp" model.
-  //Worry about it later :)
-
-  //Depends on how user will do things.
-  
-}; //end GLOBAL STORE
 
 struct symvar
 {
@@ -194,15 +120,10 @@ hole( const string& n, const std::shared_ptr<symmodel>& p )
 struct elemptr
 {
   std::shared_ptr<symmodel> model;
-  vector<size_t> idx;
-  
-elemptr( const std::shared_ptr<symmodel>& p, const size_t& i )
-: model( p ), idx( vector<size_t>(1,i) )
-  {
-  }
+  size_t idx;
 
-elemptr( const std::shared_ptr<symmodel>& p, const vector<size_t>& i )
-: model( p ), idx( i )
+  elemptr( const std::shared_ptr<symmodel>& p, const size_t& i )
+  : model( p ), idx( i )
   {
   }
 };
