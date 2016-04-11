@@ -206,9 +206,6 @@
 //REV: TODO: I can "fill" all correspondences by doing "other side". I just check that target model is smaller, and then do the thing.
 
 
-#pragma once
-
-#include <symmodel.h>
 
 
 
@@ -588,6 +585,12 @@
 //I don't know that I was called from a GENERATOR though, that's the issue. In between each line though, I do.
 //So, in between each line, I know something was created? Ah, instead of literal string called by DOCMD, I make a DOGENCMD()
 //which is similar? Important thing is that I can um, check everything.
+
+
+#pragma once
+
+#include <symmodel.h>
+
 
 struct genfunct_t
 {

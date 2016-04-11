@@ -135,6 +135,8 @@ struct symvar
 
   bool init=false;
 
+  bool isparam=false;
+  
   bool isinit()
   {
     return init;
@@ -161,6 +163,11 @@ struct symvar
   void writevar()
   {
     ++written;
+  }
+
+  void setisparam()
+  {
+    isparam=true;
   }
   
   //Default is "my location"
@@ -458,6 +465,210 @@ struct cmdstore
     
 };
 
+vector<real_t> vect_mult( const vector< vector<real_t> >& v )
+{
+  if( v.size() == 0 )
+    {
+      fprintf(stderr, "vect mult size 0\n");
+      exit(1);
+    }
+  
+  vector<real_t> r = v[0];
+  if( r.size() == 0 )
+    {
+      fprintf(stderr, "multiplying zero size vector...\n");
+      exit(1);
+    }
+  
+  else if( v.size() == 1 )
+    {
+      real_t res=1;
+      for(size_t x=0; x<v[0].size(); ++x)
+	{
+	  res *= r[x];
+	}
+      r.resize(1);
+      r[0] = res;
+      //r.push_back( res ); //size 1 lol
+    }
+  else
+    {
+      for(size_t a=1; a<v.size(); ++a)
+	{
+	  if( v[a].size() != r.size() )
+	    {
+	      fprintf(stderr, "REV error vect mult, v1 != v2\n");
+	      exit(1);
+	    }
+
+	  for(size_t x=0; x<r.size(); ++x)
+	    {
+	      r[x]*=v[a][x];
+	    }
+	}
+    }
+  
+  return r;
+}
+
+
+vector<real_t> vect_sum( const vector< vector<real_t> >& v )
+{
+  if( v.size() == 0 )
+    {
+      fprintf(stderr, "vect sum size 0\n");
+      exit(1);
+    }
+  
+  vector<real_t> r = v[0];
+  if( r.size() == 0 )
+    {
+      fprintf(stderr, "sum zero size vector...\n");
+      exit(1);
+    }
+  else if( v.size() == 1 )
+    {
+      real_t res=0;
+      for(size_t x=0; x<v[0].size(); ++x)
+	{
+	  res += r[x];
+	}
+      r.resize(1);
+      r[0] = res;
+      //r.push_back( res ); //size 1 lol
+    }
+  else
+    {
+      for(size_t a=1; a<v.size(); ++a)
+	{
+	  if( v[a].size() != r.size() )
+	    {
+	      fprintf(stderr, "REV error vect mult, v1 != v2\n");
+	      exit(1);
+	    }
+
+	  for(size_t x=0; x<r.size(); ++x)
+	    {
+	      r[x] += v[a][x];
+	    }
+	}
+    }
+  
+  return r;
+} //end vect sum.
+
+
+vector<real_t> vect_div(  const vector< vector<real_t> >& v )
+{
+  if( v.size() == 0 )
+    {
+      fprintf(stderr, "vect div size 0\n");
+      exit(1);
+    }
+
+  vector<real_t> r = v[0];
+  for(size_t x=1; x<v.size(); ++x)
+    {
+      if( v[x].size() != r.size() )
+	{
+	  fprintf(stderr, "REV WTF vect div v1 != v2\n");
+	  exit(1);
+	}
+      for(size_t y=0; y<v[x].size(); ++y)
+	{
+	  r[x] /= v[x][y];
+	}
+    }
+
+  return r;
+  
+}
+
+vector<real_t> vect_diff(  const vector< vector<real_t> >& v )
+{
+   if( v.size() == 0 )
+    {
+      fprintf(stderr, "vect diff size 0\n");
+      exit(1);
+    }
+
+  vector<real_t> r = v[0];
+  for(size_t x=1; x<v.size(); ++x)
+    {
+      if( v[x].size() != r.size() )
+	{
+	  fprintf(stderr, "REV WTF vect diff v1 != v2\n");
+	  exit(1);
+	}
+      for(size_t y=0; y<v[x].size(); ++y)
+	{
+	  r[x] -= v[x][y];
+	}
+    }
+
+  return r;
+  
+}
+
+vector<real_t> vect_negate( const vector<real_t>& val )
+{
+  vector<real_t> r = val;
+  for(size_t x=0; x<r.size(); ++x)
+    {
+      r[x] = -r[x];
+    }
+  return r;
+}
+
+vector<real_t> vect_exp( const vector<real_t>& val )
+{
+  vector<real_t> r = val;
+  for(size_t x=0; x<r.size(); ++x)
+    {
+      r[x] = exp(r[x]);
+    }
+  return r;
+}
+
+vector<real_t> vect_normal( const vector<real_t>& meanval, const vector<real_t>& stdval, std::default_random_engine& RANDGEN )
+{
+  vector<real_t> r = meanval;
+  if(meanval.size() != stdval.size())
+    {
+      fprintf(stderrr, "vect_normal error mean != std size\n"); exit(1);
+    }
+  for(size_t x=0; x<r.size(); ++x)
+    {
+      std::normal_distribution<real_t> mydist( meanval[x], stdval[x] );
+      r[x] = mydist( RANDGEN );
+    }
+
+  return r;
+     
+}
+
+vector<real_t> vect_uniform( const vector<real_t>& minval, const vector<real_t>& maxval, std::default_random_engine& RANDGEN )
+{
+  vector<real_t> r = meanval;
+  if(meanval.size() != stdval.size())
+    {
+      fprintf(stderrr, "vect_unif error min != max size\n"); exit(1);
+    }
+  for(size_t x=0; x<r.size(); ++x)
+    {
+      std::uniform_distribution<real_t> mydist( meanval[x], stdval[x] );
+      r[x] = mydist( RANDGEN );
+    }
+  
+  return r;
+     
+}
+
+
+std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ, const std::shared_ptr<symvar>& var );
+
+std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace, const std::shared_ptr<symvar>& var );
+
 std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ );
 
 std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace );
@@ -600,6 +811,37 @@ struct identity_corresp : public corresp
     }
 };
 
+
+//One sided? Meh.
+struct const_corresp : public corresp
+{
+  vector<size_t> getall( const size_t& s )
+  {
+    return vector<size_t>(1, 0);
+  }
+  
+  
+  //size_t getvar( const size_t& s, const std::vector<real_t>& var )
+  vector<real_t> getallvar( const size_t& s, const symvar& var )
+  {
+    //size_t idx = get(s); //REV: no need, it's identity.
+    if( s >= var.valu.size() )
+      {
+	fprintf(stderr, "In identity corresp, error s > var size\n");
+	exit(1);
+      }
+
+    return vector<real_t>(1, var.valu[0] );
+  }
+  
+  
+  const_corresp( const std::shared_ptr<symmodel>& targ )
+    :
+  corresp( targ )
+  {
+    
+  }
+};
 
 
 struct conn_corresp : public corresp
@@ -795,10 +1037,10 @@ struct symmodel
   {
     //check that it does not exist, and add only if it does not.
     //Only operates on "top level" models!!
-    std::shared_ptr<corresp> tmp;
-    bool exists = getcorresp( targ, tmp );
+    //std::shared_ptr<corresp> tmp;
+    auto tmp = getcorresp( targ );
     
-    if( !exists )
+    if( !tmp )
       {
 	std::shared_ptr<symmodel> thistop = get_toplevel_model();
 	std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
@@ -806,13 +1048,27 @@ struct symmodel
       }
   } //end addcoresp
   
-  bool getcorresp( const symvar& s, std::shared_ptr<corresp>& c )
+  std::shared_ptr<corresp> getcorresp( const shared_ptr<symvar>& s )
   {
-    return getcorresp( s.parent, c );
+    if( s->isparam )
+      {
+	//Doesn't matter, just return a const guy or smthing.
+	return std::make_shared<corresp>( const_corresp( s->parent ) );
+      }
+    if(! s->parent)
+      {
+	fprintf(stderr, "REV: error in getcorresp(var), var has no parent!\n");
+	exit(1);
+      }
+    
+    return getcorresp( s->parent );
   }
   
-  bool getcorresp( const std::shared_ptr<symmodel>& targ, std::shared_ptr<corresp>& c )
+  std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& targ )
     {
+
+      std::shared_ptr<corresp> c;
+      
       fprintf(stdout, "Looking for corresp between [%s] and [%s]\n", buildpath().c_str(), targ->buildpath().c_str());
       std::shared_ptr<symmodel> thistop = get_toplevel_model();
       std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
@@ -827,12 +1083,13 @@ struct symmodel
 	  if( thistop->correspondences[x]->targmodel == targtop )
 	    {
 	      c = thistop->correspondences[x];
-	      return true;
 	    }
 	}
-      return false;
+      return c;
+      
     } //end getcorresp
 
+  
   bool check_same_toplevel_model( const std::shared_ptr<symmodel>& targmodel )
   {
     if( get_toplevel_model() == targmodel->get_toplevel_model() )
@@ -1399,9 +1656,9 @@ struct symmodel
 	  {
 	    //I NEED TO GO THROUGH A CORRESPONDENCE
 	    
-	    std::shared_ptr<corresp> mycorresp;
-	    bool exists = getcorresp( nextmodel, mycorresp );
-	    if( !exists )
+	    //std::shared_ptr<corresp> mycorresp;
+	    auto mycorresp  = getcorresp( nextmodel );
+	    if( !mycorresp )
 	      {
 		fprintf(stderr, "REV: getcorresp in get_model_widx, failed, no such corresp exists between [%s] and [%s]\n", buildpath().c_str(), nextmodel->buildpath().c_str());
 		exit(1);

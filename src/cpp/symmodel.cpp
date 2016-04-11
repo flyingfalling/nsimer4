@@ -241,8 +241,8 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
       elemptr m2 = findmodel( postmod, trace, globals );
       //auto curr = get_current_model(trace);
       std::shared_ptr<corresp> mycorr;
-      bool foundcorr = ep.model->getcorresp( m2, mycorr );
-      if( !foundcorr )
+      auto mycorr = ep.model->getcorresp( m2 );
+      if( !mycorr )
 	{
 	  fprintf(stderr, "REV: rofl stupid richard, trying to read a corresp that doesn't exist\n");
 	  exit(1);
@@ -261,7 +261,7 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	  vp.idx = ret;
 	  return vp;
 	}
-    }
+    } //end iscorr
   else
     {
       vector<size_t> loc = ep.model->get_varloc( vartail );
@@ -292,9 +292,11 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	}
       else
 	{
+	  auto realvar = ep.model->vars[ loc[0] ];
+	  
 	  //REV: SANITY CHECK, this will return SAME if it is SAME,
 	  //Will return CONST if it is const ;)
-	  auto corr = getcorresp( ep.model, trace );
+	  auto corr = getcorresp_forvar( ep.model, trace, realvar );
 	  if( !corr )
 	    {
 	      fprintf(stderr, "REV: error no correspondence exists between models but I'm trying to link them? SHIT\n");
@@ -429,7 +431,8 @@ void set_proper_var_widx(const string& varname, const vector<elemptr>& trace, co
 	{
 	  //REV: SANITY CHECK, this will return SAME if it is SAME,
 	  //Will return CONST if it is const ;)
-	  auto corr = getcorresp( ep.model, trace );
+	  auto realvar = ep.model->vars[ loc[0] ];
+	  auto corr = getcorresp_forvar( ep.model, trace, realvar );
 	  if( !corr )
 	    {
 	      fprintf(stderr, "REV: error no correspondence exists between models but I'm trying to link them? SHIT\n");
@@ -455,7 +458,7 @@ void set_proper_var_widx(const string& varname, const vector<elemptr>& trace, co
 	      exit(1);
 	    }
 	  	  
-	  auto realvar = ep.model->vars[ loc[0] ];
+	  
 	  //vector<real_t> vals = var->getvalus( ep.idx );
 	  //vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
 	  realvar->setvalus( transformed, vp.valu );
@@ -525,15 +528,20 @@ FUNCDECL(SUM)
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
     { exit(1); }
+  varptr vp;
   
-  real_t val=0;
-  for( size_t tosum=0; tosum<parsed.size(); ++tosum)
+  vector<vector<real_t>> val;
+  
+  for(size_t x=0; x<parsed.size(); ++x)
     {
-      string toexec = parsed[tosum];
-      val += DOCMD( toexec, trace, cmds, globals );
+      string toexec = parsed[x];
+      varptr vp2 = DOCMD( toexec, trace, cmds, globals );
+      val.push_back( vp2.valu );
     }
 
-  return val;
+  vp.valu = vect_sum( val );
+
+  return vp;
 }
 
 
@@ -554,15 +562,20 @@ FUNCDECL(MULT)
   if( parsed.size() < 1 )
     { exit(1); }
 
-  real_t val=1.0;
+  varptr vp;
   
-  for( size_t tosum=0; tosum<parsed.size(); ++tosum)
+  vector<vector<real_t>> val;
+  
+  for(size_t x=0; x<parsed.size(); ++x)
     {
-      string toexec = parsed[tosum];
-      val *= DOCMD( toexec, trace, cmds, globals );
+      string toexec = parsed[x];
+      varptr vp2 = DOCMD( toexec, trace, cmds, globals );
+      val.push_back( vp2.valu );
     }
 
-  return val;
+  vp.valu = vect_mult( val );
+  
+  return vp;
 }
 
 //div
@@ -573,18 +586,23 @@ FUNCDECL(DIV)
   if( parsed.size() < 1 )
     { exit(1); }
 
-  string toexec = parsed[0];
-
-  real_t val=DOCMD( toexec, trace, cmds );
+  varptr vp;
   
-  for( size_t tosum=1; tosum<parsed.size(); ++tosum)
+  vector<vector<real_t>> val;
+  
+  for(size_t x=0; x<parsed.size(); ++x)
     {
-      toexec = parsed[tosum];
-      val /= DOCMD( toexec, trace, cmds, globals );
+      string toexec = parsed[x];
+      varptr vp2 = DOCMD( toexec, trace, cmds, globals );
+      val.push_back( vp2.valu );
     }
 
-  return val;
+  vp.valu = vect_div( val );
+  
+  return vp;
 }
+
+
 
 //subtract
 FUNCDECL(DIFF)
@@ -593,17 +611,24 @@ FUNCDECL(DIFF)
   //subtract all from first one?
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() < 1 )
-    { exit(1); }
-
-  string toexec = parsed[0];
-  real_t val=DOCMD( toexec, trace, cmds );
-  for( size_t tosum=1; tosum<parsed.size(); ++tosum)
     {
-      toexec = parsed[tosum];
-      val -= DOCMD( toexec, trace, cmds, globals );
+      exit(1);
     }
+
+  varptr vp;
   
-  return val;
+  vector<vector<real_t>> val;
+  
+  for(size_t x=0; x<parsed.size(); ++x)
+    {
+      string toexec = parsed[x];
+      varptr vp2 = DOCMD( toexec, trace, cmds, globals );
+      val.push_back( vp2.valu );
+    }
+
+  vp.valu = vect_diff( val );
+  
+  return vp;
 }
 
 
@@ -612,11 +637,22 @@ FUNCDECL(NEGATE)
   fprintf( stdout, "Executing NEGATE arg: [%s]\n", arg.c_str() );
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
-    { exit(1); }
+    {
+      exit(1);
+    }
 
+  varptr vp;
+  
+  vector<real_t> val;
+  
+  
   string toexec = parsed[0];
-  real_t val= DOCMD( toexec, trace, cmds, globals );
-  return (-1.0 * val);
+  varptr vp2 = DOCMD( toexec, trace, cmds, globals );
+  val = vp2.valu; //.push_back( vp2.valu );
+  
+  vp.valu = vect_negate( val );
+  
+  return vp;
 }
 
 FUNCDECL(EXP)
@@ -626,10 +662,17 @@ FUNCDECL(EXP)
   if( parsed.size() != 1 )
     { exit(1); }
 
+  varptr vp;
+  
+  vector<real_t> val;
+  
   string toexec = parsed[0];
-  real_t val = DOCMD( toexec, trace, cmds, globals );
-
-  return exp( val );
+  varptr vp2 = DOCMD( toexec, trace, cmds, globals );
+  val = vp2.valu ;
+  
+  vp.valu = vect_exp( val );
+  
+  return vp;
 }
 
 FUNCDECL(GAUSSRAND)
@@ -639,16 +682,24 @@ FUNCDECL(GAUSSRAND)
   if( parsed.size() != 2 )
     { exit(1); }
 
+
+  varptr vp;
+  
   string meanstr = parsed[0];
   string stdstr = parsed[1];
-  real_t meanval = DOCMD( meanstr, trace, cmds, globals );
-  real_t stdval = DOCMD( stdstr, trace, cmds, globals );
 
-  std::normal_distribution<real_t> mydist( meanval, stdval );
+  
+  varptr mvp = DOCMD( meanstr, trace, cmds, globals );
+  varptr svp = DOCMD( stdstr, trace, cmds, globals );
+  
+  vp.valu = vect_normal( mvp.valu, svp.valu, cmds.RANDGEN );
+  //std::normal_distribution<real_t> mydist( meanval, stdval );
 
+  return vp;
+  
   //CMDS contains the randgen I guess?
-  real_t val = mydist( cmds.RANDGEN );
-  return val;
+  //real_t val = mydist( cmds.RANDGEN );
+  //return val;
 }
 
 FUNCDECL(UNIFORMRAND)
@@ -658,16 +709,19 @@ FUNCDECL(UNIFORMRAND)
   if( parsed.size() != 2 )
     { exit(1); }
 
+
+  varptr vp;
+  
   string minstr = parsed[0];
   string maxstr = parsed[1];
-  real_t minval = DOCMD( minstr, trace, cmds, globals );
-  real_t maxval = DOCMD( maxstr, trace, cmds, globals );
+  
+  varptr minval = DOCMD( minstr, trace, cmds, globals );
+  varptr maxval = DOCMD( maxstr, trace, cmds, globals );
 
-  std::uniform_distribution<real_t> mydist( minval, maxval );
+  //std::uniform_distribution<real_t> mydist( minval, maxval );
+  vp.valu = vect_uniform( minval.valu, maxval.valu, cmds.RANDGEN );
 
-  //CMDS contains the randgen I guess?
-  real_t val = mydist( cmds.RANDGEN );
-  return val;
+  return vp;
 }
 
 FUNCDECL( SUMFORALL )
@@ -708,11 +762,13 @@ FUNCDECL( SUMFORALLHOLES )
   elemptr currmodel = get_curr_model( trace );
   hole myhole = currmodel.model->gethole( holename ); 
   
-  real_t val=0;
+  varptr vp;
+  vp.valu = vector<real_t>(1,0);
+  
   for( size_t h=0; h<myhole.members.size(); ++h)
     {
       std::shared_ptr<symmodel> holemod = myhole.members[h];
-
+      
       //REV: this is the hack to get a single value out of something that would return multiple.
       //Easier to make everything instead do vector-stuff, i.e. match it. Problem is if it encounters different sizes at different points "inside" one of those elements.
       //By default, make everything work in lockstep. Only error out if I would return a "naked" array. No, only error out if I would
@@ -736,9 +792,10 @@ FUNCDECL( SUMFORALLHOLES )
 	  fprintf(stderr, "Huh, SUM FOR ALL HOLES still error from DOCMD returning unrealistic idx??!!\n");
 	  exit(1);
 	}
-      val += v.valu[0]; //same as v.valu[v.idx[0] ]?
+      vp.valu[0] += v.valu[0];
+      
     }
-  return val;
+  return vp;
 } //end SUMFORALLHOLES
 
 FUNCDECL( SUMFORALLCONNS )
@@ -763,19 +820,27 @@ FUNCDECL( SUMFORALLCONNS )
   
   //elemptr currmodel = get_curr_model(trace);
   std::shared_ptr<corresp> corr = getcorresp( currmodel.model,  holemodel.model ); //REV: this may have returned the identity pointer if they are the same model?
+
   
-  real_t val=0;
+  varptr vp;
+  vp.valu = vector<real_t>(1, 0);
   
   vector<size_t> mypost = corr->getall( currmodel.idx );
-
+  
   for( size_t i = 0; i<mypost.size(); ++i )
     {
       size_t idx = mypost[ i ];
       newtrace[ newtrace.size()-1 ].idx = idx; //set idx to correct idx for execution.
-      val += DOCMD( arg, newtrace, cmds );
+      varptr v2 = DOCMD( arg, newtrace, cmds );
+      if(v2.valu.size() != 1)
+	{
+	  fprintf(stderr, "REV: multi call sumfor all conns in multi-size v2 valu\n");
+	  exit(1);
+	}
+      vp.valu[0] += v2.valu[0];
     }
 
-  return val;
+  return vp;
   
 } //end SUMFORALLCONNS
 
@@ -815,28 +880,44 @@ FUNCDECL( MULTFORALLHOLES )
   string toexec = parsed[1];
 
   elemptr currmodel = get_curr_model( trace );
-  hole myhole = currmodel.model->gethole( holename ); 
-    
-  real_t val=1;
+  hole myhole = currmodel.model->gethole( holename );
+
+
+  varptr vp;
+  vp.valu = vector<real_t>(1 , 1.0);
+  
   for( size_t h=0; h<myhole.members.size(); ++h)
     {
       std::shared_ptr<symmodel> holemod = myhole.members[h];
+      
+      //REV: this is the hack to get a single value out of something that would return multiple.
+      //Easier to make everything instead do vector-stuff, i.e. match it. Problem is if it encounters different sizes at different points "inside" one of those elements.
+      //By default, make everything work in lockstep. Only error out if I would return a "naked" array. No, only error out if I would
+      //Combine elements that are not of same size.
+      //Note, parallelization only happens at the "first level" stage anyway ;0. So, what happens if I SUM( DOCMD( blah1, blah2) ). blah1/blah2, return Ndim array,
+      //I sum, so I get Ndim array back. I.e. it does element-wise. However, at some point (lowest level) it must be only a single index. That is the difference.
+      //Since execution does not spread per-member...fine. I don't need to worry about "index" being overwritten
 
+      //REV: all update funct have implicit (FORALL(items, )) appended at beginning. I.e. that is what determines thread size.
+      
+      //Fuck all that for now? If I am just reading, that is fine. Problem is if I try to write or some shit? It causes problems, because it returns a READ type array
+      //that is the issue. At the most basic level, when I want to SET, I directly get the array anyway. How do I know what SET size is.
       varptr v = exec_w_corresp( toexec, holemod, trace, cmds );
       if( v.idx.size() != 1 || v.valu.size() != 1 )
 	{
-	  fprintf(stderr, "ERROR in MULTFORALLHOLES due to exec_w_corresp reutrning non-single value/idx...");
+	  fprintf(stderr, "ERROR in SUMFORALLHOLES due to exec_w_corresp reutrning non-single value/idx...");
 	  exit(1);
 	}
       if( v.idx[0] != 0 )
 	{
-	  fprintf(stderr, "Huh, MULT FOR ALL HOLES still error from DOCMD returning unrealistic idx??!!\n");
+	  fprintf(stderr, "Huh, SUM FOR ALL HOLES still error from DOCMD returning unrealistic idx??!!\n");
 	  exit(1);
 	}
-      val *= v.valu[0]; //same as v.valu[v.idx[0] ]?
+      vp.valu[0] *= v.valu[0];
       
     }
-  return val;
+  return vp;
+  
 } //end MULTFORALLHOLES
 
 FUNCDECL( MULTFORALLCONNS )
@@ -861,19 +942,27 @@ FUNCDECL( MULTFORALLCONNS )
   
   //elemptr currmodel = get_curr_model(trace);
   std::shared_ptr<corresp> corr = getcorresp( currmodel.model,  holemodel.model ); //REV: this may have returned the identity pointer if they are the same model?
-  
-  real_t val=1;
+
+
+  varptr vp;
+  vp.valu = vector<real_t>(1, 1.0);
   
   vector<size_t> mypost = corr->getall( currmodel.idx );
-
+  
   for( size_t i = 0; i<mypost.size(); ++i )
     {
       size_t idx = mypost[ i ];
       newtrace[ newtrace.size()-1 ].idx = idx; //set idx to correct idx for execution.
-      val *= DOCMD( arg, newtrace, cmds );
+      varptr v2 = DOCMD( arg, newtrace, cmds );
+      if(v2.valu.size() != 1)
+	{
+	  fprintf(stderr, "REV: multi call sumfor all conns in multi-size v2 valu\n");
+	  exit(1);
+	}
+      vp.valu[0] *= v2.valu[0];
     }
 
-  return val;
+  return vp;
   
 } //end MULTFORALLCONNS
 
@@ -914,6 +1003,7 @@ cmdstore::cmdstore()
     ADDFUNCT( DIFF );
     ADDFUNCT( EXP );
     ADDFUNCT( NEGATE );
+
     ADDFUNCT( SUMFORALL );
     ADDFUNCT( MULTFORALL );
 
@@ -928,36 +1018,40 @@ cmdstore::cmdstore()
 real_t symvar::getvalu( const size_t& idx )
 {
   
-    if( !init )
-      {
-	return 0;
-      }
-    
-    if( idx >= valu.size() )
-      {
-	fprintf(stderr, "In symvar, getvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
-	exit(1);
-      }
+  if( !init )
+    {
+      return 0;
+    }
 
-    return valu[idx];
+  if( isparam )
+    {
+      return valu[0];
+    }
+  
+  if( idx >= valu.size() )
+    {
+      fprintf(stderr, "In symvar, getvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
+      exit(1);
+    }
+
+  return valu[idx];
   
 }
 
 vector<real_t> symvar::getvalus( const vector<size_t>& idx )
 {
+  if( !init )
+    {
+      return vector<real_t>(idx.size(), 0);
+    }
+
+  vector<real_t> ret;
+  for(size_t x=0; x<idx.size(); ++x)
+    {
+      ret.push_back( getvalu( idx[x] ) );
+    }
   
-    if( !init )
-      {
-	return vector<real_t>(0);
-      }
-
-    vector<real_t> ret;
-    for(size_t x=0; x<idx.size(); ++x)
-      {
-	ret.push_back( getvalu( idx[x] ) );
-      }
-
-    return ret;
+  return ret;
   
 }
 
@@ -966,17 +1060,34 @@ void symvar::setvalu( const size_t& idx, const real_t& val )
   if( !init )
     {
       //do nothing
-      return;
+      //return;
     }
-    
-  if( idx >= valu.size() )
+  else if( isconst )
     {
-      fprintf(stderr, "In symvar, setvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
-      exit(1);
-    }
+      if( idx.size() != 1)
+	{
+	  fprintf(stderr, "Whoa error in setval, isconst but idx size is not 1...\n");
+	  exit(1);
+	}
+      if( idx[0] != 0 )
+	{
+	  fprintf( stderr, "Whoa error in setval, isconst but idx zero element is not 0...\n");
+	  exit(1);
+	}
 
-  valu[idx] = val;
-  return;
+      valu[0] = val;
+      
+    }
+  else
+    {
+      if( idx >= valu.size() )
+	{
+	  fprintf(stderr, "In symvar, setvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", idx, valu.size(), name.c_str(), parent->buildpath().c_str());
+	  exit(1);
+	}
+      
+      valu[idx] = val;
+    }
 }
 
 void symvar::setvalus( const vector<size_t>& idx, const vector<real_t>& val )
@@ -984,29 +1095,89 @@ void symvar::setvalus( const vector<size_t>& idx, const vector<real_t>& val )
   if( !init )
     {
       //do nothing
-      return;
     }
-
-  if(val.size() != idx.size())
+  else
     {
-      fprintf(stderr, "setvalus, error idx size and val size not same\n");
-      exit(1);
-    }
   
-  for(size_t x=0; x<idx.size(); ++x)
-    {
-      setvalu( idx[x], val[x] );
+      if(val.size() != idx.size())
+	{
+	  fprintf(stderr, "setvalus, error idx size and val size not same\n");
+	  exit(1);
+	}
+  
+      for(size_t x=0; x<idx.size(); ++x)
+	{
+	  setvalu( idx[x], val[x] );
+	}
     }
   
   return;
 }
 
 
+//Is targ ever not parent of var? Wtf?
+std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ, const std::shared_ptr<symvar>& var )
+{
+  //std::shared_ptr<corresp> tmp;
 
+  if( !var->parent)
+    {
+      fprintf(stderr, "getcorresp forvar , var has no parent exiting\n");
+      exit(1);
+    }
+  if( var->parent != targ )
+    {
+      fprintf(stderr, "REV: wtf in getcorresp_forvar, var parent is not target model we are looking for corresp in????\n");
+      exit(1);
+    }
+  
+  //curr and targ are same? If so, it returns identity anyway. If target VAR is *CONSTANT* (var, not model!), then I can return
+  //CONSTANT ;)
 
-std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ )
+  //DO at this point.
+
+  //Also need to code inside getcorresp, where it will check the VARIABLE specifically, not the models orz.
+
+  //REV: TODO HERE HERE HERE
+  //Need to make it so that when I "create" correspondence, it creates the other side too.
+  //EVEN if I just literally (manually) am "pushing back" to it.
+  //At end of push-for-all I need to create other side of all correspondences (if they do not exist on other side yet, and this corresp is init).
+  //means I can't partially produce vars over multi gen functs.
+  
+  //bool gotit = curr->getcorresp_forvar( targ, tmp, var );
+  auto tmp = curr->getcorresp( var );
+  if(!tmp)
+    {
+      fprintf(stderr, "ERROR in some function execution, could not find required corresp between models [%s] and [%s]\n", curr->buildpath().c_str(), targ->buildpath().c_str() );
+      exit(1);
+    }
+  
+  return tmp;
+}
+
+std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace, const std::shared_ptr<symvar>& var )
+{
+  elemptr lastguy = get_curr_model(trace); //trace[trace.size()-1];
+  
+  return getcorresp_forvar( lastguy.model, targ, var );
+}
+
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ)
 {
   std::shared_ptr<corresp> tmp;
+  
+  //curr and targ are same? If so, it returns identity anyway. If target VAR is *CONSTANT* (var, not model!), then I can return
+  //CONSTANT ;)
+
+  //DO at this point.
+
+  //Also need to code inside getcorresp, where it will check the VARIABLE specifically, not the models orz.
+
+  //REV: TODO HERE HERE HERE
+  //Need to make it so that when I "create" correspondence, it creates the other side too.
+  //EVEN if I just literally (manually) am "pushing back" to it.
+  //At end of push-for-all I need to create other side of all correspondences (if they do not exist on other side yet, and this corresp is init).
+  //means I can't partially produce vars over multi gen functs.
   
   bool gotit = curr->getcorresp( targ, tmp );
   if(!gotit)
@@ -1022,7 +1193,7 @@ std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& targ, cons
 {
   elemptr lastguy = get_curr_model(trace); //trace[trace.size()-1];
   
-  return getcorresp( lastguy.model, targ );
+  return getcorresp( lastguy.model, targ);
 }
 
 elemptr get_curr_model( const vector<elemptr>& trace )
