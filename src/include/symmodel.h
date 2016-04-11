@@ -12,7 +12,7 @@
 #include <commontypes.h>
 #include <fparser.h>
 #include <parsehelpers.h>
-#include <generator.h>
+//#include <generator.h>
 
 #include <sys/types.h>
 #include <vector>
@@ -23,6 +23,8 @@
 #include <algorithm>
 #include <memory>
 
+#include <random>
+
 using std::vector;
 using std::string;
 
@@ -31,9 +33,10 @@ struct symmodel;
 struct cmdstore;
 struct elemptr;
 struct varptr;
+//struct generator;
 
 
-typedef std::function< real_t( const string&, const vector<elemptr>&, const cmdstore&, global_store& ) > cmd_functtype;
+
 
 
 vector<string> parse( const string& name);
@@ -61,64 +64,22 @@ struct global_store
     models.push_back( m );
   }
 
-  void addempty( const string& localname )
-  {
-    models.push_back( symmodel::Create( "", "", localname ) );
-  }
-
+  void addempty( const string& localname );
+  
   //find model type thing. Only first level ;)
 
-  vector<size_t> modellocs( const string& s )
-  {
-    vector<size_t> loc;
-    for( size_t m=0; m<models.size(); ++m )
-      {
-	if( models[m]->localname.compare( s ) == 0 )
-	  {
-	    loc.push_back( m );
-	  }
-      }
-    return loc;
-  }
+  vector<size_t> modellocs( const string& s );
+
+  vector<size_t> modellocs( const std::shared_ptr<symmodel>& m );
+
   
-  elemptr findmodel( const string& s, const vector<size_t>& idx )
-  {
-    vector<size_t> found = modellocs( s );
-    if( found > 1 )
-      {
-	fprintf(stderr, "REV error in find model in GLOBAL STORE, found more than one examples of model [%s]\n", s.c_str() );
-	exit(1);
-      }
+  elemptr findmodel( const string& s ); //, const vector<size_t>& idx );
+  elemptr findmodel( const std::shared_ptr<symmodel>& m );
 
-    std::shared_ptr<symmodel> foundguy;
-    elemptr res( foundguy, idx );
-    //just get this model, right now ;) It will be a var in a model I assume.
-    if( found.size() == 1)
-      {
-	//foundguy = models[ found[0] ];
-	res.model = models[ found[0] ];
-      }
-
-    return res;
-  } //end findmodel
-
-
-  //How about like, GET VAR. All models have only a single variable I guess?
-  //So, we simply get that VAR?
-  //Do I literally return the var? Do I return the corresp to that var?
-  //I am accessing it FROM a source model (possibly via holes). What item to I
-  //access it from? I basically have SRC model, TARG model, corresp between
-  //the models. I always assume it is IDENTITY or BLAH if src is one inside
-  //GLOBALSTORE. Ah.... AH! make globalstore sym model ;)
-  //Otherwise, corresp must exist ;) Makes it so much easier haha.
-  //To um, ensure that
-
-  //Whenever I try to resolve a variable, I do it like, globally. Main model, and um, "corresp" model.
-  //Worry about it later :)
-
-  //Depends on how user will do things.
-  
 }; //end GLOBAL STORE
+
+
+typedef std::function< varptr( const string&, const vector<elemptr>&, cmdstore&, global_store& ) > cmd_functtype;
 
 struct symvar
 {
@@ -135,7 +96,7 @@ struct symvar
 
   bool init=false;
 
-  bool isparam=false;
+  bool isconst=false;
   
   bool isinit()
   {
@@ -143,11 +104,11 @@ struct symvar
   }
   
   real_t getvalu( const size_t& idx );
-  real_t getvalus( const vector<size_t>& idx );
+  vector<real_t> getvalus( const vector<size_t>& idx );
   
 
   void setvalu( const size_t& idx, const real_t& val );
-  void symvar::setvalus( const vector<size_t>& idx, const vector<real_t>& val )
+  void setvalus( const vector<size_t>& idx, const vector<real_t>& val );
  
   void reset()
   {
@@ -165,9 +126,9 @@ struct symvar
     ++written;
   }
 
-  void setisparam()
+  void setisconst()
   {
-    isparam=true;
+    isconst=true;
   }
   
   //Default is "my location"
@@ -230,15 +191,20 @@ elemptr( const std::shared_ptr<symmodel>& p, const vector<size_t>& i )
 struct corresp
 {
   std::shared_ptr<symmodel> targmodel;
-
+  std::shared_ptr<symmodel> parent;
+  
   bool init=false;
 
+  std::vector<size_t> startidx;
+  std::vector<size_t> numidx;
+  std::vector<size_t> correspondence;
+  
   corresp()
   {
   }
 
-  corresp( const std::shared_ptr<symmodel>& t)
-  : targmodel( t )
+corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
+: targmodel( t ), parent(p )
   {
   }
   
@@ -284,10 +250,15 @@ struct corresp
   //However, creating new vect is a pain in the ass, so just return IDX directly
   virtual vector<size_t> getall( const size_t& s ) = 0;
 
+  virtual void set( const vector<size_t>& idxs, const vector<size_t> newvals )
+  {
+    return;
+  }
+
   //E.g. problem is if I want to "get all all" of an index, we have an issue. For now, just handle it as a single example.
   
   //This calls derived getall for me
-  vector<size_t> getallall( const vector<size_t>& s )
+  vector<size_t> getall( const vector<size_t>& s )
   {
     vector<size_t> ret;
     for(size_t a=0; a<s.size(); ++a)
@@ -322,14 +293,28 @@ struct cmdstore
   vector<string> localfnames;
   vector<string> localfs;
 
+  vector<size_t> findlocal( const string& fname ) const
+  {
+    vector<size_t> r;
+    for(size_t x=0; x<localfnames.size(); ++x)
+      {
+	if( localfnames[x].compare( fname )  == 0 )
+	  {
+	    r.push_back( x );
+	  }
+      }
+    return r;
+  }
+  
   //bool handlelocal( const string& input, string& output ) //const string& fname, const vector<string>& args )
-  string handlelocal( const string& input ) //const string& fname, const vector<string>& args )
+  string handlelocal( const string& input ) const //const string& fname, const vector<string>& args )
   {
     vector<string> parsed = fparse( input );
     if( parsed.size() < 2 )
       {
-	fprintf(stderr, "REV; not a function with args?\n");
-	exit(1);
+	//fprintf(stderr, "REV; not a function with args ([%s])?\n", input.c_str());
+	//exit(1);
+	return input;
       }
 
     string fname = parsed[0];
@@ -352,7 +337,7 @@ struct cmdstore
       }
   }
   
-  string replace( const string& s, const vector<string>& arglist )
+  string replace( const string& s, const vector<string>& arglist ) const
   {
     //Doparse should be 1!!!!
     vector<string> parsed = fparse( s );
@@ -424,7 +409,7 @@ struct cmdstore
 
   //Parses just by commas, but leaves matching parens (i.e. functions) intact.
   //This is just a literal parse of inside of funct? Is there any point in this? Just use the remnants from fparse...
-  vector<string> doparse( const string& s ) const
+  vector<string> doparse( const string& s ) const 
   {
     //JUST RUN MY PARSER HERE, only first level parse.
     auto f( std::begin( s ));
@@ -465,204 +450,23 @@ struct cmdstore
     
 };
 
-vector<real_t> vect_mult( const vector< vector<real_t> >& v )
-{
-  if( v.size() == 0 )
-    {
-      fprintf(stderr, "vect mult size 0\n");
-      exit(1);
-    }
-  
-  vector<real_t> r = v[0];
-  if( r.size() == 0 )
-    {
-      fprintf(stderr, "multiplying zero size vector...\n");
-      exit(1);
-    }
-  
-  else if( v.size() == 1 )
-    {
-      real_t res=1;
-      for(size_t x=0; x<v[0].size(); ++x)
-	{
-	  res *= r[x];
-	}
-      r.resize(1);
-      r[0] = res;
-      //r.push_back( res ); //size 1 lol
-    }
-  else
-    {
-      for(size_t a=1; a<v.size(); ++a)
-	{
-	  if( v[a].size() != r.size() )
-	    {
-	      fprintf(stderr, "REV error vect mult, v1 != v2\n");
-	      exit(1);
-	    }
+vector<real_t> vect_mult( const vector< vector<real_t> >& v );
 
-	  for(size_t x=0; x<r.size(); ++x)
-	    {
-	      r[x]*=v[a][x];
-	    }
-	}
-    }
-  
-  return r;
-}
+vector<real_t> vect_sum( const vector< vector<real_t> >& v );
 
 
-vector<real_t> vect_sum( const vector< vector<real_t> >& v )
-{
-  if( v.size() == 0 )
-    {
-      fprintf(stderr, "vect sum size 0\n");
-      exit(1);
-    }
-  
-  vector<real_t> r = v[0];
-  if( r.size() == 0 )
-    {
-      fprintf(stderr, "sum zero size vector...\n");
-      exit(1);
-    }
-  else if( v.size() == 1 )
-    {
-      real_t res=0;
-      for(size_t x=0; x<v[0].size(); ++x)
-	{
-	  res += r[x];
-	}
-      r.resize(1);
-      r[0] = res;
-      //r.push_back( res ); //size 1 lol
-    }
-  else
-    {
-      for(size_t a=1; a<v.size(); ++a)
-	{
-	  if( v[a].size() != r.size() )
-	    {
-	      fprintf(stderr, "REV error vect mult, v1 != v2\n");
-	      exit(1);
-	    }
+vector<real_t> vect_div(  const vector< vector<real_t> >& v );
 
-	  for(size_t x=0; x<r.size(); ++x)
-	    {
-	      r[x] += v[a][x];
-	    }
-	}
-    }
-  
-  return r;
-} //end vect sum.
+vector<real_t> vect_diff(  const vector< vector<real_t> >& v );
 
+vector<real_t> vect_negate( const vector<real_t>& val );
 
-vector<real_t> vect_div(  const vector< vector<real_t> >& v )
-{
-  if( v.size() == 0 )
-    {
-      fprintf(stderr, "vect div size 0\n");
-      exit(1);
-    }
+vector<real_t> vect_exp( const vector<real_t>& val );
 
-  vector<real_t> r = v[0];
-  for(size_t x=1; x<v.size(); ++x)
-    {
-      if( v[x].size() != r.size() )
-	{
-	  fprintf(stderr, "REV WTF vect div v1 != v2\n");
-	  exit(1);
-	}
-      for(size_t y=0; y<v[x].size(); ++y)
-	{
-	  r[x] /= v[x][y];
-	}
-    }
+vector<real_t> vect_normal( const vector<real_t>& meanval, const vector<real_t>& stdval, std::default_random_engine& RANDGEN );
 
-  return r;
-  
-}
+vector<real_t> vect_uniform( const vector<real_t>& minval, const vector<real_t>& maxval, std::default_random_engine& RANDGEN );
 
-vector<real_t> vect_diff(  const vector< vector<real_t> >& v )
-{
-   if( v.size() == 0 )
-    {
-      fprintf(stderr, "vect diff size 0\n");
-      exit(1);
-    }
-
-  vector<real_t> r = v[0];
-  for(size_t x=1; x<v.size(); ++x)
-    {
-      if( v[x].size() != r.size() )
-	{
-	  fprintf(stderr, "REV WTF vect diff v1 != v2\n");
-	  exit(1);
-	}
-      for(size_t y=0; y<v[x].size(); ++y)
-	{
-	  r[x] -= v[x][y];
-	}
-    }
-
-  return r;
-  
-}
-
-vector<real_t> vect_negate( const vector<real_t>& val )
-{
-  vector<real_t> r = val;
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      r[x] = -r[x];
-    }
-  return r;
-}
-
-vector<real_t> vect_exp( const vector<real_t>& val )
-{
-  vector<real_t> r = val;
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      r[x] = exp(r[x]);
-    }
-  return r;
-}
-
-vector<real_t> vect_normal( const vector<real_t>& meanval, const vector<real_t>& stdval, std::default_random_engine& RANDGEN )
-{
-  vector<real_t> r = meanval;
-  if(meanval.size() != stdval.size())
-    {
-      fprintf(stderrr, "vect_normal error mean != std size\n"); exit(1);
-    }
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      std::normal_distribution<real_t> mydist( meanval[x], stdval[x] );
-      r[x] = mydist( RANDGEN );
-    }
-
-  return r;
-     
-}
-
-vector<real_t> vect_uniform( const vector<real_t>& minval, const vector<real_t>& maxval, std::default_random_engine& RANDGEN )
-{
-  vector<real_t> r = meanval;
-  if(meanval.size() != stdval.size())
-    {
-      fprintf(stderrr, "vect_unif error min != max size\n"); exit(1);
-    }
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      std::uniform_distribution<real_t> mydist( meanval[x], stdval[x] );
-      r[x] = mydist( RANDGEN );
-    }
-  
-  return r;
-     
-}
 
 
 std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ, const std::shared_ptr<symvar>& var );
@@ -677,7 +481,7 @@ elemptr get_curr_model( const vector<elemptr>& trace );
 
 bool check_cmd_is_multi( const string& s );
 
-real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds );
+varptr exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, cmdstore& cmds , global_store& globals);
 
 
 elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace );
@@ -685,21 +489,7 @@ elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace );
 elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace, string& varname );
 
 
-string get_containing_model_path( const string& parsearg, string& vartail )
-{
-  vector<string> parsed = parse(parsearg);
-  if( parsed.size() < 1 )
-    {
-      fprintf(stderr, "No var specified???\n");
-      exit(1);
-    }
-  else
-    {
-      vartail = parsed[ parsed.size() -1 ];
-      parsed.pop_back();
-      return CAT( parsed, "/" );
-    }
-}
+string get_containing_model_path( const string& parsearg, string& vartail );
 
 //#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 
@@ -712,7 +502,7 @@ string get_containing_model_path( const string& parsearg, string& vartail )
 //REV: yea, OK, easiest to just make the last one be the model/idx. Then when i call get_model_widx, I will use the end of that trace to do the calling I guess.
 //Or, I could use it as a sanity check. Like, the last guy on me, should always be myself and my index. Note that then I have no need to pass index...
 //Could just make global function, that wraps the calls.
-#define FUNCDECL( fname )   real_t fname( const string& arg, const vector<elemptr>& trace, const cmdstore& cmds, global_store& globals )
+#define FUNCDECL( fname )   varptr fname( const string& arg, const vector<elemptr>& trace, cmdstore& cmds, global_store& globals )
 
 FUNCDECL(DOCMD);
 FUNCDECL(READ);
@@ -741,6 +531,8 @@ struct updatefunct_t
   cmdstore cmds;
   std::shared_ptr<symmodel> model;
 
+  global_store globals;
+
   updatefunct_t( const std::shared_ptr<symmodel>& m )
   : model( m )
   {
@@ -763,7 +555,7 @@ struct updatefunct_t
 	vector<elemptr> trace;
 	elemptr elem( model, myidx );
 	trace.push_back( elem );
-	DOCMD( lines[c], trace, cmds );
+	DOCMD( lines[c], trace, cmds, globals );
       }
   }
 };
@@ -803,12 +595,14 @@ struct identity_corresp : public corresp
   }
   
 
-  identity_corresp( const std::shared_ptr<symmodel>& targ )
+ identity_corresp( const std::shared_ptr<symmodel>& targ,  const std::shared_ptr<symmodel>& p )
     :
-  corresp( targ )
+  corresp( targ, p )
     {
       
     }
+
+ 
 };
 
 
@@ -835,9 +629,9 @@ struct const_corresp : public corresp
   }
   
   
-  const_corresp( const std::shared_ptr<symmodel>& targ )
+  const_corresp( const std::shared_ptr<symmodel>& targ,  const std::shared_ptr<symmodel>& p )
     :
-  corresp( targ )
+  corresp( targ, p )
   {
     
   }
@@ -901,7 +695,7 @@ struct conn_corresp : public corresp
 	exit(1);
       }
     
-    for(size_t x=0; x<idx.size(); ++x)
+    for(size_t x=0; x<idxs.size(); ++x)
       {
 	size_t myn = idxs[x];
 	size_t myv = newvals[x];
@@ -922,14 +716,12 @@ struct conn_corresp : public corresp
   }
   
   
- conn_corresp( const std::shared_ptr<symmodel>& targ )
-   : corresp( targ )
+ conn_corresp( const std::shared_ptr<symmodel>& targ ,const std::shared_ptr<symmodel>& p )
+   : corresp( targ, p )
   {
   }
   
-  std::vector<size_t> startidx;
-  std::vector<size_t> numidx;
-  std::vector<size_t> correspondence;
+  
 };
 
 
@@ -991,7 +783,7 @@ struct symmodel
       {
 	if( !correspondences[v]->isinit() )
 	  {
-	    fprintf(stderr, "WARNING: checkcorrready(): model [%s] to model [%s] correspondence is not ready\n", buildpath().c_str(), correspondences[v]->targmodel->buildpath().c_str(), vars[v]->name.c_str() );
+	    fprintf(stderr, "WARNING: checkcorrready(): model [%s] to model [%s] correspondence is not ready (var [%s])\n", buildpath().c_str(), correspondences[v]->targmodel->buildpath().c_str(), vars[v]->name.c_str() );
 	    corrready=false;
 	  }
       }
@@ -1027,6 +819,56 @@ struct symmodel
       }
     return varsready;
   }
+
+  //REV: fuck, it must be a CONN or we're fucked? ;)
+  void fill_corresp( const std::shared_ptr<corresp>& hiscorr )
+  {
+    //My indices ?????
+    vector< vector<size_t> > mycorresps( get_modelsize() );
+    
+    vector<size_t> mydudes;
+    for(size_t n=0; n<hiscorr->correspondence.size(); ++n)
+      {
+	size_t c=hiscorr->correspondence[n];
+
+	if( c >= mycorresps.size() )
+	  {
+	    fprintf(stderr, "REV: error in mirroring correspondence...\n");
+	    exit(1);
+	  }
+
+	mycorresps[c].push_back( n );
+      }
+
+    //this is MY parst.
+    auto corr = getcorresp( hiscorr->parent );
+
+    corr->correspondence.clear();
+    corr->startidx.clear();
+    corr->numidx.clear();
+    for(size_t x=0; x<get_modelsize(); ++x)
+      {
+
+	corr->startidx.push_back( corr->correspondence.size() );
+	corr->numidx.push_back( mycorresps[x].size() );
+	corr->correspondence.insert( corr->correspondence.end(),
+				     mycorresps[x].begin(),
+				     mycorresps[x].end() );
+      }
+    
+    //corr is now initialized!
+    corr->markinit();
+    return;
+  }
+  
+  void notify_filled_corresp( const std::shared_ptr<symmodel>& targ )
+  {
+    //Call this to "mirror" from large-small on othe side.
+    auto tmp = getcorresp( targ );
+    tmp->markinit(); //I better be init haha;
+    targ->fill_corresp( tmp );
+    return;
+  }
   
   //Check that this is not top level?
   //When 'adding' hole, (holes are never added from holes)
@@ -1044,16 +886,18 @@ struct symmodel
       {
 	std::shared_ptr<symmodel> thistop = get_toplevel_model();
 	std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
-	thistop->correspondences.push_back( std::make_shared<conn_corresp>( targtop ) );
+	thistop->correspondences.push_back( std::make_shared<conn_corresp>( targtop, thistop ) );
+	
+	targ->addcorresp( shared_from_this() );
       }
   } //end addcoresp
   
-  std::shared_ptr<corresp> getcorresp( const shared_ptr<symvar>& s )
+  std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symvar>& s )
   {
-    if( s->isparam )
+    if( s->isconst )
       {
 	//Doesn't matter, just return a const guy or smthing.
-	return std::make_shared<corresp>( const_corresp( s->parent ) );
+	return std::make_shared<const_corresp>( s->parent, shared_from_this() );
       }
     if(! s->parent)
       {
@@ -1072,19 +916,27 @@ struct symmodel
       fprintf(stdout, "Looking for corresp between [%s] and [%s]\n", buildpath().c_str(), targ->buildpath().c_str());
       std::shared_ptr<symmodel> thistop = get_toplevel_model();
       std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
-      
+
+      fprintf(stdout, "Will return...\n");
       if( thistop == targtop )
 	{
-	  c = std::make_shared<identity_corresp>( targtop );
-	  return true; //it will try to add it? Fuck...
+	  c = std::make_shared<identity_corresp>( targtop, thistop );
+	  //return true; //it will try to add it? Fuck...
 	}
-      for(size_t x=0; x<thistop->correspondences.size(); ++x)
+
+      else
 	{
-	  if( thistop->correspondences[x]->targmodel == targtop )
+
+	  //Does it exist already? Wat?
+	  for(size_t x=0; x<thistop->correspondences.size(); ++x)
 	    {
-	      c = thistop->correspondences[x];
+	      if( thistop->correspondences[x]->targmodel == targtop )
+		{
+		  c = thistop->correspondences[x];
+		}
 	    }
 	}
+      
       return c;
       
     } //end getcorresp
@@ -1372,6 +1224,11 @@ struct symmodel
 
   //REV: Only DIRECTLY FILLS *THIS* specified model! I.e. does not "look up the hierarchy" for the hole to fill.
   //
+
+
+  //REV: corresp are only added when I "fill hole" with other!!!!
+  //I should do it whenver I "add corresp"
+  //Furthermore, whenever I "fill corresp" make sure it copies back ;)
   void fillhole( const vector<string>& h, const std::shared_ptr<symmodel>& modeltofillwith )
   {
     vector<string> parsed = h;
@@ -1392,7 +1249,8 @@ struct symmodel
 	    //REV: ADD CORRESP FROM THIS
 	    addcorresp( modeltofillwith ); //or I could have lots of corresp pointers sitting around...
 	    //NOTE NEED TO PUSH TO OTHER SIDE TOO!
-	    modeltofillwith->addcorresp( shared_from_this() );
+	    //Done in add corresp
+	    //modeltofillwith->addcorresp( shared_from_this() );
 	  }
 	else
 	  {

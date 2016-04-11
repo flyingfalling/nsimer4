@@ -1,6 +1,7 @@
 #include <parsehelpers.h>
 
-vector<string> tokenize_string( const string& src, const string& delim, const bool& include_empty_repeats )
+
+/*vector<string> tokenize_string( const string& src, const string& delim, const bool& include_empty_repeats )
 {
   vector<string> retval;
   boost::char_separator<char> sep( delim.c_str() );
@@ -10,6 +11,31 @@ vector<string> tokenize_string( const string& src, const string& delim, const bo
       retval.push_back( t );
     }
   return retval;
+  }*/
+
+//#include <boost/regex.hpp>
+//#include <boost/algorithm/string/regex.hpp>
+
+vector<string> tokenize_string( const string& src, const string& delim, const bool& include_empty_repeats )
+{
+
+  vector<string> result;
+  string tmp=src;
+  size_t pos = 0;
+  string token;
+
+  //I assume this includes empty repeats...
+  while ((pos = tmp.find(delim)) != std::string::npos)
+    {
+      token = tmp.substr(0, pos);
+      result.push_back(token);
+      tmp.erase(0, pos + delim.length());
+    }
+
+  //need to push back last in case there were none?
+  result.push_back( tmp );
+  
+  return result;
 }
 
 bool string_prefix_match( const std::string& orig, const std::string& prefix )

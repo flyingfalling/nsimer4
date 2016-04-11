@@ -5,7 +5,7 @@ CPPDIR=./cpp
 CPPFLAG=-std=c++11 -O3 #-g -Wall
 INCLFLAG=-I. -I$(INCLDIR) -I$(IMPLDIR)
 LIBFLAG=-L.
-LIBS= #-lboost_mpi -lboost_iostreams -lboost_serialization -lboost_filesystem -lboost_system
+LIBS= #-lboost_regex #-lboost_mpi -lboost_iostreams -lboost_serialization -lboost_filesystem -lboost_system
 
 headers = $(wildcard (INCLDIR)/*.h)
 srcs = $(wildcard $(CPPDIR)/*.cpp)
@@ -22,7 +22,7 @@ testsymmodel:  $(objs) $(headers) Makefile
 
 
 %.o: %.cpp
-	$(CC) -MMD -MP -c $(CPPFLAG) $(INCLFLAG) $< -o $@
+	$(CC) -MMD -MP -c $(CPPFLAG) $(LIBFLAG) $(INCLFLAG) $< -o $@
 
 .PHONY: clean
 
