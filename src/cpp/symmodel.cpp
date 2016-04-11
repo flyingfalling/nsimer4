@@ -221,10 +221,18 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 
   if( isidx )
     {
-      //get idx in "that" model
+      //Literally get my "idxs" in that model (whoa...?)
+      //So, get correspondence, this is same as corresp? Fuck...
+      vector<size_t> idxs = ep.idx;
+      vp.idx = idxs;
+      return vp;
     }
   else if( issize )
     {
+      size_t size = ep.model->get_toplevel_model()->modelsize;
+      vector<size_t> v( 1, size );
+      vp.idx = v;
+      return vp;
       //get size of "that" model
     }
   else if( iscorr )
