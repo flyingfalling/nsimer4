@@ -651,6 +651,34 @@ struct conn_corresp : public corresp
     return ret;
   }
 
+  void set( const vector<size_t>& idxs, const vector<size_t> newvals )
+  {
+    if(idxs.size() != newvals.size() )
+      {
+	fprintf(stderr, "corresp set, size idx neq newvals\n");
+	exit(1);
+      }
+    
+    for(size_t x=0; x<idx.size(); ++x)
+      {
+	size_t myn = idxs[x];
+	size_t myv = newvals[x];
+
+	correspondence[myn] = myv;
+	if( startidx[myn] != myn )
+	  {
+	    fprintf(stderr, "REV trying to SET in corresp, but it is not a LARGE SIDE\n");
+	    exit(1);
+	  }
+
+	if( numidx[myn] != 1 )
+	  {
+	    fprintf(stderr, "REV trying to SET in corresp, but it is not SIZE=1 (i.e. it's not LARGE SIDE )\n");
+	    exit(1);
+	  }
+      }
+  }
+  
   
  conn_corresp( const std::shared_ptr<symmodel>& targ )
    : corresp( targ )

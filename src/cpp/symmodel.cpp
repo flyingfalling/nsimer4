@@ -80,7 +80,7 @@ FUNCDECL(DOCMD)
   if( found )
     {
       //retval = execfunct( newarg, model, cmds, myidx, targidx );
-      retval = execfunct( newarg, trace, cmds );
+      retval = execfunct( newarg, trace, cmds, globals );
     }
   else
     {
@@ -89,7 +89,7 @@ FUNCDECL(DOCMD)
       if( isnumer == false )
 	{
 	  //This will call recursively if fname is not local to model.
-	  retval = READ( fname, trace, cmds );
+	  retval = READ( fname, trace, cmds, globals );
 	}
     }
   
@@ -239,9 +239,9 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
     {
       //get final model haha
       elemptr m2 = findmodel( postmod, trace, globals );
-      auto curr = get_current_model(trace);
-      corresp mycorr;
-      bool foundcorr = curr.model->getcorresp( m2, mycorr );
+      //auto curr = get_current_model(trace);
+      std::shared_ptr<corresp> mycorr;
+      bool foundcorr = ep.model->getcorresp( m2, mycorr );
       if( !foundcorr )
 	{
 	  fprintf(stderr, "REV: rofl stupid richard, trying to read a corresp that doesn't exist\n");
@@ -251,13 +251,13 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	{
 	  //build and return from corresp. Based on idx.
 	  //Do I automatically append?
-	  vector<size_t> myidx = curr.idx;
+	  vector<size_t> myidx = ep.idx;
 	  if(myidx.size() != 1 )
 	    {
 	      fprintf(stderr, "REV: in getvar for real, something fxxup, myidx in IS CORR is not 1 [%s]->[%s]\n", premod.c_str(), postmod.c_str());
 	      exit(1);
 	    }
-	  vector<size_t> ret = mycorr.getall( myidx[0] );
+	  vector<size_t> ret = mycorr->getall( myidx[0] );
 	  vp.idx = ret;
 	  return vp;
 	}
@@ -271,7 +271,13 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	  if( ep.model->parent )
 	    {
 	      //REV: what is IDX here? haha...
-	      return ep.model->parent->getvar_widx( varname, ep.idx, trace );
+
+	      //Replace last one with parent and go?
+	      vector<elemptr> newtrace = trace;
+	      elemptr tmp( ep.model->parent, ep.idx );
+	      newtrace.pop_back();
+	      newtrace.push_back( tmp );
+	      return get_proper_var_widx(varname, newtrace, globals); //ep.model->parent->getvar_widx( varname, ep.idx, trace );
 	    }
 	  else
 	    {
@@ -279,28 +285,185 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	      exit(1);
 	    }
 	}
-      if(loc.size() > 1 )
+      else if(loc.size() > 1 )
 	{
 	  fprintf(stderr, "REV weird more than one var of same name [%s]\n", varname.c_str());
 	  exit(1);
 	}
+      else
+	{
+	  //REV: SANITY CHECK, this will return SAME if it is SAME,
+	  //Will return CONST if it is const ;)
+	  auto corr = getcorresp( ep.model, trace );
+	  if( !corr )
+	    {
+	      fprintf(stderr, "REV: error no correspondence exists between models but I'm trying to link them? SHIT\n");
+	      exit(1);
+	    }
+	  if( ep.idx.size() != 1 )
+	    {
+	      fprintf(stderr, "REV: we have a problem houston...\n");
+	      exit(1);
+	    }
+	  vector<size_t> transformed = corr->getall( ep.idx[0] );
+	  
+	  auto realvar = ep.model->vars[ loc[0] ];
+	  vector<real_t> vals = var->getvalus( transformed );
+	  vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
+	  vp.valu = vals;
+	  return vp;
+	}
       
-      //actualcontaining = shared_from_this();
-      return ep.model->vars[ loc[0] ];
-      
-      //real_t val;
-      vector<real_t> vals = var->getvalus( ep.idx );
-      vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
-      //varptr vp( vals, idxs );
-      vp.valu = vals;
-      return vp;
-    }
-}
+    } //end ELSE (it is normal var)
+} //end get proper var
 
-void set_proper_var()
+
+
+
+
+void set_proper_var_widx(const string& varname, const vector<elemptr>& trace, const global_store& globals, const varptr& vp )
 {
+  string vartail;
+  string premod, postmod;
+  bool iscorr = check_iscorr( varname, premod, postmod );
+
+  //With iscorr, the model itself is the ->. In other words, I will parse it first into pre-> and post->
+  //I will *directly* get the pre model. In pre model, I will directly access the variable ->POSTMODEL
+
+  string containingpath = get_containing_model_path( varname, vartail );
   
-}
+  elemptr ep;
+  if( !iscorr )
+    {
+      ep = findmodel( containingpath, trace, globals );
+    }
+  else
+    {
+      //Problem is, if it is "", we are fucked? It *always* must be called from inside a model. If the model is syn2-1 fine. That will be on trace?
+      ep = findmodel( premod, trace, globals );
+    }
+
+  bool isidx = check_idx( vartail );
+  bool issize = check_issize( vartail );
+
+  if( isidx )
+    {
+      //Literally get my "idxs" in that model (whoa...?)
+      //So, get correspondence, this is same as corresp? Fuck...
+      //vector<size_t> idxs = ep.idx;
+      //REV: I never "set" indices, so OK.
+      //vp.idx = idxs;
+      //return vp;
+      fprintf(stderr, "REV: error, trying to SET indices...lol\n");
+      exit(1);
+    }
+  else if( issize )
+    {
+      //size_t size = ep.model->get_toplevel_model()->modelsize;
+      //vector<size_t> v( 1, size );
+      //vp.idx = v;
+      //return vp;
+      fprintf(stderr, "REV: error trying to directly SET size!!\n");
+      exit(1);
+    }
+  else if( iscorr )
+    {
+      //get final model haha
+      elemptr m2 = findmodel( postmod, trace, globals );
+      //auto curr = get_current_model(trace);
+      std::shared_ptr<corresp> mycorr;
+      bool foundcorr = ep.model->getcorresp( m2, mycorr );
+      if( !foundcorr )
+	{
+	  fprintf(stderr, "REV: rofl stupid richard, trying to read a corresp that doesn't exist\n");
+	  exit(1);
+	}
+      else
+	{
+	  //build and return from corresp. Based on idx.
+	  //Do I automatically append?
+	  //How to set it? Lol, I'm literally setting only "major" size. Thus, start/etc. are all the same (identity)
+	  
+	  vector<size_t> myidx = ep.idx;
+	  /*if(myidx.size() != 1 )
+	    {
+	      fprintf(stderr, "REV: in getvar for real, something fxxup, myidx in IS CORR is not 1 [%s]->[%s]\n", premod.c_str(), postmod.c_str());
+	      exit(1);
+	      }*/
+
+	  vector<size_t> newvals = vp.idx;
+	  mycorr->set( myidx, newvals );
+	  return;
+	  
+	}
+    }
+  else
+    {
+      vector<size_t> loc = ep.model->get_varloc( vartail );
+      //fprintf(stdout, "REV: doen getting varloc of requested var, size  is [%lu]\n", loc.size() );
+      if(loc.size() == 0 )
+	{
+	  if( ep.model->parent )
+	    {
+	      //REV: what is IDX here? haha...
+	      
+	      //Replace last one with parent and go?
+	      vector<elemptr> newtrace = trace;
+	      elemptr tmp( ep.model->parent, ep.idx );
+	      newtrace.pop_back();
+	      newtrace.push_back( tmp );
+	      return get_proper_var_widx(varname, newtrace, globals); //ep.model->parent->getvar_widx( varname, ep.idx, trace );
+	    }
+	  else
+	    {
+	      fprintf(stderr, "GETVAR, could not get variable through model hierarchy. Note I am now at root level so I do not know model name...[%s]\n", varname.c_str());
+	      exit(1);
+	    }
+	}
+      else if(loc.size() > 1 )
+	{
+	  fprintf(stderr, "REV weird more than one var of same name [%s]\n", varname.c_str());
+	  exit(1);
+	}
+      else
+	{
+	  //REV: SANITY CHECK, this will return SAME if it is SAME,
+	  //Will return CONST if it is const ;)
+	  auto corr = getcorresp( ep.model, trace );
+	  if( !corr )
+	    {
+	      fprintf(stderr, "REV: error no correspondence exists between models but I'm trying to link them? SHIT\n");
+	      exit(1);
+	    }
+	  if( ep.idx.size() != 1 )
+	    {
+	      fprintf(stderr, "REV: we have a problem houston...\n");
+	      exit(1);
+	    }
+	  //This should be roughly 1-1 right? Will I ever be trying to SET
+	  //values in a "different" array?
+	  //In the other case, I was trying to "get" LARGE-SMALL.?
+	  //So, 2, got a bunch of guys. And then I returned those.
+	  //In this case, it BETTER be the other way around...
+	  //Like, this kind of actually will work maybe though?
+	  //If I want to set all POSTSYN guys or some shit, to some value?
+	  vector<size_t> transformed = corr->getall( ep.idx[0] );
+	  
+	  if(transformed.size() != 1)
+	    {
+	      fprintf(stderr, "Haha, trying to write VAR 1->may through a corresp\n");
+	      exit(1);
+	    }
+	  	  
+	  auto realvar = ep.model->vars[ loc[0] ];
+	  //vector<real_t> vals = var->getvalus( ep.idx );
+	  //vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
+	  realvar->setvalus( transformed, vp.valu );
+	  return;
+	}
+      
+    }
+} //end set var proper
 		     
 
 
@@ -316,36 +479,20 @@ FUNCDECL(READ)
 {
   fprintf( stdout, "Executing READ arg: [%s]\n", arg.c_str() );
   //This parses into variable name!!!
+
   vector<string> parsed = cmds.doparse( arg );
   if( parsed.size() != 1 )
     {
       exit(1);
     }
-  
   //May still be blah/blah/blah
   string varname = parsed[0];
   
-  string vartail;
+  return get_proper_var_widx( varname, trace, globals );
+  
+}
 
-  elemptr ep = get_curr_model(trace);
-  std::shared_ptr<symvar> var = ep.model->getvar_widx( varname, ep.idx, trace );
-  fprintf(stdout, "REV: finished getting it, checking parent...\n");
-  if(!var->parent)
-    {
-      fprintf(stderr, "REV wtf var doesn't have parent?\n");
-      exit(1);
-    }
-  
-  std::shared_ptr<symmodel> contmodel = var->parent; //haha, true containing model... implies it stepped up  hierarchy some.
-  
-  std::shared_ptr<corresp> corr = getcorresp( contmodel, trace );
-    
-  //real_t val;
-  vector<real_t> vals = var->getvalus( ep.idx );
-  vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
-  varptr vp( vals, idxs );
-  return vp;
-} //end READ
+
 
 
 FUNCDECL(SET)
@@ -356,38 +503,19 @@ FUNCDECL(SET)
     {
       exit(1);
     }
-
+  
   string toexec = parsed[1];
   varptr res = DOCMD( toexec, trace, cmds, globals );
-  real_t vals = res.valu; //OR, res.idx, if it is a size_t guy? FUCK It depends what type the variable is I'm setting. Check for CORRESP here! :)
-  
+
   string varname = parsed[0];
-  
-  string vartail;
-  
-  //This is the index I will use. So problem is e.g. if I want to 'set' multiple, I need to um, set blah.idx to that thing. Ah...this is problem. Idxs being set to,
-  //they are also specified when I pass into the higher/nextlevel DOCMD. So it will (theoretically) execute for each of those as well.
-  //In other words, trace is not only a single index, but the list of corresponding idxs. That is fine.
 
-  //Everything is great, only case that might break it is the case where I go through a hole. Like, literally result is alwasy a vector, and within this funct
-  //I always just do the same thing, but for all indices.
-  //Problem is if e.g. returned vector are different sizes...
-  //If I am returning a single (constant?) result, what do I do? Return a vector copy of it? Yea, I guess. Like, every single thing returns a vect on the input idxs.
-  //Only difference is that the only "parallelization" is happening at the VERY FIRST LEVEL, i.e. what thing of idxs is passed through ;) Oohh, this is how I can chop up
-  //within threads! :)
+  set_proper_var_widx( varname, trace, globals, res );
 
-  //How do I determine "number" of retvals then? it will depend on num args or something, fine. Usually it is only one ;)
-  elemptr ep = get_curr_model(trace);
-  std::shared_ptr<symvar> var = ep.model->getvar_widx( varname, ep.idx, trace );
-  std::shared_ptr<symmodel> contmodel = var->parent; //haha, true containing model... implies it stepped up  hierarchy some.
+  varptr emptyv;
   
-  std::shared_ptr<corresp> corr = getcorresp( contmodel, trace );
-    
-  //Could have been read and set separately?
-  var->setvalus( ep.idx, vals );
-  
-  return -66666666666;
+  return emptyv;
 }
+
 
 
 //Only other time I have to worry about idx, is when I do "forall"
@@ -402,14 +530,23 @@ FUNCDECL(SUM)
   for( size_t tosum=0; tosum<parsed.size(); ++tosum)
     {
       string toexec = parsed[tosum];
-      val += DOCMD( toexec, trace, cmds );
+      val += DOCMD( toexec, trace, cmds, globals );
     }
 
   return val;
 }
 
 
+//Better way:
+// get "vector" of values by coalescing multiple args.
+//Then call MULT(<vect>) on it! OK.
+
+
+//Whoa problem. How to deal with IDXS.
+//Mult-idxs can only be generated by FORALL (not true?)
+
 //product
+//If only one arg, it automatically mults them together? Etc.
 FUNCDECL(MULT)
 {
   fprintf( stdout, "Executing MULT arg: [%s]\n", arg.c_str() );
@@ -418,11 +555,11 @@ FUNCDECL(MULT)
     { exit(1); }
 
   real_t val=1.0;
-
+  
   for( size_t tosum=0; tosum<parsed.size(); ++tosum)
     {
       string toexec = parsed[tosum];
-      val *= DOCMD( toexec, trace, cmds );
+      val *= DOCMD( toexec, trace, cmds, globals );
     }
 
   return val;
@@ -443,7 +580,7 @@ FUNCDECL(DIV)
   for( size_t tosum=1; tosum<parsed.size(); ++tosum)
     {
       toexec = parsed[tosum];
-      val /= DOCMD( toexec, trace, cmds );
+      val /= DOCMD( toexec, trace, cmds, globals );
     }
 
   return val;
@@ -463,7 +600,7 @@ FUNCDECL(DIFF)
   for( size_t tosum=1; tosum<parsed.size(); ++tosum)
     {
       toexec = parsed[tosum];
-      val -= DOCMD( toexec, trace, cmds );
+      val -= DOCMD( toexec, trace, cmds, globals );
     }
   
   return val;
@@ -478,7 +615,7 @@ FUNCDECL(NEGATE)
     { exit(1); }
 
   string toexec = parsed[0];
-  real_t val= DOCMD( toexec, trace, cmds );
+  real_t val= DOCMD( toexec, trace, cmds, globals );
   return (-1.0 * val);
 }
 
@@ -490,7 +627,7 @@ FUNCDECL(EXP)
     { exit(1); }
 
   string toexec = parsed[0];
-  real_t val = DOCMD( toexec, trace, cmds );
+  real_t val = DOCMD( toexec, trace, cmds, globals );
 
   return exp( val );
 }
@@ -504,8 +641,8 @@ FUNCDECL(GAUSSRAND)
 
   string meanstr = parsed[0];
   string stdstr = parsed[1];
-  real_t meanval = DOCMD( meanstr, trace, cmds );
-  real_t stdval = DOCMD( stdstr, trace, cmds );
+  real_t meanval = DOCMD( meanstr, trace, cmds, globals );
+  real_t stdval = DOCMD( stdstr, trace, cmds, globals );
 
   std::normal_distribution<real_t> mydist( meanval, stdval );
 
@@ -523,8 +660,8 @@ FUNCDECL(UNIFORMRAND)
 
   string minstr = parsed[0];
   string maxstr = parsed[1];
-  real_t minval = DOCMD( minstr, trace, cmds );
-  real_t maxval = DOCMD( maxstr, trace, cmds );
+  real_t minval = DOCMD( minstr, trace, cmds, globals );
+  real_t maxval = DOCMD( maxstr, trace, cmds, globals );
 
   std::uniform_distribution<real_t> mydist( minval, maxval );
 
@@ -540,11 +677,11 @@ FUNCDECL( SUMFORALL )
   
   if(parsed.size() == 2 )
     {
-      return SUMFORALLHOLES( arg, trace, cmds );
+      return SUMFORALLHOLES( arg, trace, cmds, globals );
     }
   else if(parsed.size() == 1)
     {
-      return SUMFORALLCONNS( arg, trace, cmds );
+      return SUMFORALLCONNS( arg, trace, cmds, globals );
     }
   else
     {
@@ -649,11 +786,11 @@ FUNCDECL( MULTFORALL )
   
   if(parsed.size() == 2 )
     {
-      return MULTFORALLHOLES( arg, trace, cmds );
+      return MULTFORALLHOLES( arg, trace, cmds, globals );
     }
   else if(parsed.size() == 1)
     {
-      return MULTFORALLCONNS( arg, trace, cmds );
+      return MULTFORALLCONNS( arg, trace, cmds, globals );
     }
   else
     {
@@ -863,6 +1000,8 @@ void symvar::setvalus( const vector<size_t>& idx, const vector<real_t>& val )
   
   return;
 }
+
+
 
 
 std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ )
