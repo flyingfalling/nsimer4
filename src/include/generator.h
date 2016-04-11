@@ -212,36 +212,6 @@
 
 
 
-struct genfunct_t
-{
-  vector<string> lines;
-  //gencmdstore cmds;
-  cmdstore cmds; //Problem is that these all return real_t. This is uh, fine, however we want to be able to CREATE/ADD guys. And do the same thing for SIZE_T
-  //lol convert real_t to size_t? Will that ever fuck up? Literally copy everything for size_t as well?
-  std::shared_ptr<generator> gen;
-
-
-  void execute( const size_t& myidx )
-  {
-    for(size_t l=0; l<lines.size(); ++l)
-      {
-	vector<elemptr> trace;
-	elemptr tmp( gen->model, myidx );
-	trace.push_back(tmp);
-	DOCMD( lines[l], trace, cmds );
-      }
-  }
-
-  void add( const string& s )
-  {
-    lines.push_back( s );
-  }
-
-genfunct_t() // const std::shared_ptr<generator>& g )
-//: gen(g )
-  {
-  }
-}; //end struct genfunct_t
 
 
 //So, I have functions implemented which:
@@ -620,10 +590,41 @@ genfunct_t() // const std::shared_ptr<generator>& g )
 //I don't know that I was called from a GENERATOR though, that's the issue. In between each line though, I do.
 //So, in between each line, I know something was created? Ah, instead of literal string called by DOCMD, I make a DOGENCMD()
 //which is similar? Important thing is that I can um, check everything.
-FUNCDECL(ADDFORALL)
-{
-}
 
+struct genfunct_t
+{
+  vector<string> lines;
+  //gencmdstore cmds;
+  cmdstore cmds; //Problem is that these all return real_t. This is uh, fine, however we want to be able to CREATE/ADD guys. And do the same thing for SIZE_T
+  //lol convert real_t to size_t? Will that ever fuck up? Literally copy everything for size_t as well?
+  std::shared_ptr<generator> gen;
+
+  void addlocalfunct(const string& fname, const string& f )
+  {
+    cmds.addlocal( fname, f );
+  }
+
+  void execute( const size_t& myidx )
+  {
+    for(size_t l=0; l<lines.size(); ++l)
+      {
+	vector<elemptr> trace;
+	elemptr tmp( gen->model, myidx );
+	trace.push_back(tmp);
+	DOCMD( lines[l], trace, cmds );
+      }
+  }
+
+  void add( const string& s )
+  {
+    lines.push_back( s );
+  }
+
+genfunct_t() // const std::shared_ptr<generator>& g )
+//: gen(g )
+  {
+  }
+}; //end struct genfunct_t
 
 
 
@@ -648,7 +649,7 @@ struct generator
   
   std::shared_ptr<symmodel> model;
   
-  vector<string> varstogen;
+  //vector<string> varstogen;
 
   void add_to_genfunct( const string& s )
   {
@@ -662,8 +663,9 @@ struct generator
   
   //List of variables that will be simultaneously generated.
   //I can find them in model...note some may be connections.
-  generator( const vector<string>& genlist, const std::shared_ptr<symmodel>& m )
-  : model( m ), varstogen( genlist )
+  //generator( const vector<string>& genlist, const std::shared_ptr<symmodel>& m )
+ generator()// const std::shared_ptr<symmodel>& m )
+    // : model( m )
   {
   }
   

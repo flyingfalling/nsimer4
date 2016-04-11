@@ -49,6 +49,9 @@ struct varptr
   vector<size_t> idx; //necessary?
 };
 
+
+//REV: should globalstore just be a symmodel? Does it need special functions? For purposes of checking if it is in global store or not. Or if two are both in
+//global store together. For purpose of finding correspondences.
 struct globalstore
 {
   vector< std::shared_ptr<symmodel> > models;
@@ -272,6 +275,16 @@ struct corresp
 //stringify macro
 #define STR( _mystring )  #_mystring
 
+
+struct subfunct_replacer
+{
+  vector<size_t> argrep;
+  vector<size_t> toreplace;
+
+  
+  
+};
+
 struct cmdstore
 {
   vector< string > functnames;
@@ -279,6 +292,84 @@ struct cmdstore
   
   std::default_random_engine RANDGEN;
 
+  vector<string> localfnames;
+  vector<string> localfs;
+
+  //bool handlelocal( const string& input, string& output ) //const string& fname, const vector<string>& args )
+  string handlelocal( const string& input ) //const string& fname, const vector<string>& args )
+  {
+    vector<string> parsed = fparse( input );
+    if( parsed.size() < 2 )
+      {
+	fprintf(stderr, "REV; not a function with args?\n");
+	exit(1);
+      }
+
+    string fname = parsed[0];
+    vector<string> args( parsed.begin()+1, parsed.end() );
+    
+    vector<size_t> locs = findlocal( fname );
+    if( locs.size() == 1 )
+      {
+	//output = replace( localfs[ locs[0] ], args );
+	return replace( localfs[ locs[0] ], args );
+      }
+    else if( locs.size() > 1 )
+      {
+	fprintf(stderr, "REV: error handle local, more than one funct registered under name [%s]\n", fname.c_str() );
+	exit(1);
+      }
+    else
+      {
+	return input;
+      }
+  }
+  
+  string replace( const string& s, const vector<string>& arglist )
+  {
+    //Doparse should be 1!!!!
+    vector<string> parsed = fparse( s );
+    
+    if( parsed.size() == 1 )
+      {
+	for(size_t x=0; x<arglist.size(); ++x)
+	  {
+	    //Fuck, this is a "converter!!!! 
+	    string name="arg" + std::to_string( x );
+	    if( parsed[0].compare(name) == 0 )
+	      {
+		//parsed[0] = arglist[x];
+		return arglist[x];
+	      }
+	    else
+	      {
+		//return parsed[0];
+	      }
+	  }
+      }
+    else
+      {
+	vector<string> argpart( parsed.begin()+1, parsed.end() );
+	for( size_t p=0; p<argpart.size(); ++p)
+	  {
+	    argpart[p] = replace( argpart[p], arglist );
+	  }
+	string fpart =  parsed[0] ;
+
+	string argpartstr = CAT( argpart, "," );
+	string newf = fpart + "(" + argpartstr + ")";
+	return newf;
+      }
+  }
+  
+    
+  void addlocal( const string& fname, const string& f )
+  {
+    //Check no name clash etc.
+    localfnames.push_back(fname);
+    localfs.push_back(f);
+  }
+  
   cmdstore();
 
   void add( const string& s, cmd_functtype& f )

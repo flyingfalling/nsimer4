@@ -22,18 +22,38 @@ vector<string> parsecorr( const string& name)
 }
 
 
-//real_t DOCMD( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds, const size_t& myidx )
+//REV: TYPE
+// varptr funct( string, trace, cmds, globalstore )
+// All accesses are done via reference to globalstore and trace, we don't do raw TRACE gets usually right?
+// Hm, make TRACE a trace struct, which has a global_store, and a thing?
+// Um, shit, fuck, shit. Where are global stores created? They are created possibly in every update function? It may use a "new" and "local" global store.
+// But, all have access to a (copy of?) the GLOBAL global store? Which may have some things like dt etc.?
+// Does it "set" dt? I can never modify dt I guess... A local copy of DT?
+// The local globalstore is used for tmp variables, and also for accessing temp variables. So...we have two global stores. One for tmp, and one that has "global"
+// variables like DT, etc.? We "choose" which ones to go into? variables like dt are automatically written there I guess... It's in global store, i.e. top level model
+// Oh well. EZ. Same one, just don't overlap rofl. Global store models are DIRECTLY variables. Good.
+// When I call "GET CORRESP", what does it do? It looks for the one that has the match between them. First it checks if they are part of same "parent" model?
+// in this case, !parent, so nothing will happen (fuck?). They will never be part of same parent, so that is good.
+// How do I handle schedulers? :)
+
+//I  need to manually set the correspondence? For some cases it is start/size/corresp. I only set corresp, and compute start/size from there. For guys I manaully create
+//I assume it needs blah. But what if I pass a size/start cmd as well? Then I can construct that way? rofl fuck me.
+
+// I always specify "big-small". And it generates everything else ;)
 FUNCDECL(DOCMD)
 {
+  //First, replace it with locals...
+  string rearg = cmds.handlelocal( rearg );
+  
   //Cannot be comma separated (although we could do multiple in one line that way?)
-  vector<string> parsed = cmds.doparse( arg );
+  vector<string> parsed = cmds.doparse( rearg );
   if( parsed.size() != 1 )
     {
-      fprintf(stderr, "REV: cmd parsed is not size one in DOCMD\n");
+      fprintf(stderr, "REV: cmd parsed is not size one in DOCMD [%s]\n", rearg.c_str());
       exit(1);
     }
     
-  vector<string> functparse = cmds.fparse( arg );
+  vector<string> functparse = cmds.fparse( rearg );
   string fname = functparse[0]; //name of registered function in cmdstore that iI will be calling
   
   functparse.erase( functparse.begin() );
