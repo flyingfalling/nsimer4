@@ -94,16 +94,16 @@ FUNCDECL(DOCMD)
       if( isnumer == false )
 	{
 	  //This will call recursively if fname is not local to model.
-	  fprintf(stdout, "Trying to read non-numeric [%s]\n", fname.c_str());
+	  //fprintf(stdout, "Trying to read non-numeric [%s]\n", fname.c_str());
 	  retval = READ( fname, trace, cmds, globals );
-	  fprintf(stdout, "FINISHED Trying to read non-numeric [%s]. Got result of length [%lu]\n", fname.c_str(), retval.valu.size());
+	  //fprintf(stdout, "FINISHED Trying to read non-numeric [%s]. Got result of length [%lu]\n", fname.c_str(), retval.valu.size());
 	}
       else
 	{
 	  retval.valu = vector<real_t>(1, res);
 	}
     }
-  fprintf(stdout, "Returning from DOCMD\n");
+  //fprintf(stdout, "Returning from DOCMD\n");
   return retval;
 }
 
@@ -135,7 +135,7 @@ elemptr findmodel( const string& s, const vector<elemptr>& trace, global_store& 
   auto mod =  get_model_widx( s, trace ); //This only iterates up to top level within me....I need to do a full search.
   if( mod.model )
     {
-      fprintf(stdout, "FOUND MODEL [%s] IN TRACE!\n", s.c_str());
+      //fprintf(stdout, "FOUND MODEL [%s] IN TRACE!\n", s.c_str());
       return mod;
     }
   else
@@ -143,7 +143,7 @@ elemptr findmodel( const string& s, const vector<elemptr>& trace, global_store& 
       mod = globals.findmodel( s );
       if( mod.model )
 	{
-	  fprintf(stdout, "FOUND MODEL [%s] IN GLOBALS!\n", s.c_str());
+	  //fprintf(stdout, "FOUND MODEL [%s] IN GLOBALS!\n", s.c_str());
 	  return mod;
 	}
       else
@@ -157,12 +157,12 @@ elemptr findmodel( const string& s, const vector<elemptr>& trace, global_store& 
 	  mod = get_model_widx( s, newtrace ); //yolo.
 	  if( mod.model )
 	    {
-	      fprintf(stdout, "FOUND MODEL [%s] IN ROOT OF MAIN!\n", s.c_str());
+	      //fprintf(stdout, "FOUND MODEL [%s] IN ROOT OF MAIN!\n", s.c_str());
 	      return mod;
 	    }
 	  else
 	    {
-	      fprintf(stderr, "ERRO could not find model, [%s] even through globals, parents, and bubbling through trace (last trace is [%s])\n" , s.c_str(), ep.model->buildpath().c_str());
+	      fprintf(stderr, "ERROR could not find model, [%s] even through globals, parents, and bubbling through trace (last trace is [%s])\n" , s.c_str(), ep.model->buildpath().c_str());
 	      exit(1);
 	    }
 	}
@@ -283,7 +283,7 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
   else //is VARIABLE (note, if it was from global, we need to get the varname differently? They all have only one fuck...)
     {
       //REV: if it was a global, I just get it there ;)
-      fprintf(stdout, "GET PROPER: getting as a variable [%s] (vartail is [%s])\n", varname.c_str(), vartail.c_str() );
+      //fprintf(stdout, "GET PROPER: getting as a variable [%s] (vartail is [%s])\n", varname.c_str(), vartail.c_str() );
       vector<size_t> loc = ep.model->get_varloc( vartail );
       auto gmodel = globals.findmodel( ep.model ).model;
       
@@ -333,7 +333,7 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	  //REV: SANITY CHECK, this will return SAME if it is SAME,
 	  //Will return CONST if it is const ;)
 	  auto corr = getcorresp_forvar( ep.model, trace, realvar );
-	  fprintf(stdout, "Finished finding corresp\n");
+	  //fprintf(stdout, "Finished finding corresp\n");
 	  if( !corr )
 	    {
 	      fprintf(stderr, "REV: error no correspondence exists between models but I'm trying to link them? SHIT\n");
@@ -346,13 +346,13 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	    }
 	  vector<size_t> transformed = corr->getall( ep.idx[0] );
 
-	  fprintf(stdout, "Got transformed, now try to get valus...\n");
-	  
+	  //fprintf(stdout, "Got transformed, now try to get valus...\n");
+	  //REV" TODO HERE HERE HERE um, this should be rewritten with vget and vset
 	  vector<real_t> vals = realvar->getvalus( transformed );
-	  fprintf(stdout, "Got valus...go into VP now ;)\n");
+	  //fprintf(stdout, "Got valus...go into VP now ;)\n");
 	  vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
 	  vp.valu = vals;
-	  fprintf(stdout, "Finished VP, now return...\n");
+	  //fprintf(stdout, "Finished VP, now return...\n");
 	  return vp;
 	}
       
@@ -366,7 +366,7 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 void set_proper_var_widx(const string& varname, const vector<elemptr>& trace, global_store& globals, const varptr& vp )
 {
 
-  fprintf(stdout, "Setting proper var, [%s], most recent model is [%s]\n" , varname.c_str(), get_curr_model(trace).model->buildpath().c_str());
+  //fprintf(stdout, "Setting proper var, [%s], most recent model is [%s]\n" , varname.c_str(), get_curr_model(trace).model->buildpath().c_str());
   
   string vartail;
   string premod, postmod;
@@ -505,13 +505,173 @@ void set_proper_var_widx(const string& varname, const vector<elemptr>& trace, gl
 	  
 	  //vector<real_t> vals = var->getvalus( ep.idx );
 	  //vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
-	  realvar->setvalus( transformed, vp.valu );
+	  
+	  //realvar->setvalus( transformed, vp.valu );
+	  realvar->vsetvalus( transformed, vp );
 	  return;
 	}
       
     }
 } //end set var proper
-		     
+
+
+
+
+
+
+void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, global_store& globals, const varptr& vp, const vector<size_t>& topushascorr )
+{
+
+  //fprintf(stdout, "Setting proper var, [%s], most recent model is [%s]\n" , varname.c_str(), get_curr_model(trace).model->buildpath().c_str());
+  
+  string vartail;
+  string premod, postmod;
+  bool iscorr = check_iscorr( varname, premod, postmod );
+
+  //With iscorr, the model itself is the ->. In other words, I will parse it first into pre-> and post->
+  //I will *directly* get the pre model. In pre model, I will directly access the variable ->POSTMODEL
+
+  string containingpath = get_containing_model_path( varname, vartail );
+  
+  elemptr ep;
+  if( !iscorr )
+    {
+      ep = findmodel( containingpath, trace, globals );
+    }
+  else
+    {
+      //Problem is, if it is "", we are fucked? It *always* must be called from inside a model. If the model is syn2-1 fine. That will be on trace?
+      ep = findmodel( premod, trace, globals );
+    }
+
+  bool isidx = check_idx( vartail );
+  bool issize = check_issize( vartail );
+
+  if( isidx )
+    {
+      //Literally get my "idxs" in that model (whoa...?)
+      //So, get correspondence, this is same as corresp? Fuck...
+      //vector<size_t> idxs = ep.idx;
+      //REV: I never "set" indices, so OK.
+      //vp.idx = idxs;
+      //return vp;
+      fprintf(stderr, "REV: error, trying to SET indices...lol\n");
+      exit(1);
+    }
+  else if( issize )
+    {
+      //size_t size = ep.model->get_toplevel_model()->modelsize;
+      //vector<size_t> v( 1, size );
+      //vp.idx = v;
+      //return vp;
+      fprintf(stderr, "REV: error trying to directly SET size!!\n");
+      exit(1);
+    }
+  else if( iscorr )
+    {
+      //get final model haha
+      elemptr m2 = findmodel( postmod, trace, globals );
+      //auto curr = get_current_model(trace);
+      //std::shared_ptr<corresp> mycorr;
+      auto mycorr = ep.model->getcorresp( m2.model );
+      //bool foundcorr = ep.model->getcorresp( m2, mycorr );
+      if( !mycorr )
+	{
+	  fprintf(stderr, "REV: rofl stupid richard, trying to read a corresp that doesn't exist\n");
+	  exit(1);
+	}
+      else
+	{
+	  //build and return from corresp. Based on idx.
+	  //Do I automatically append?
+	  //How to set it? Lol, I'm literally setting only "major" size. Thus, start/etc. are all the same (identity)
+	  
+	  vector<size_t> myidx = ep.idx;
+	  /*if(myidx.size() != 1 )
+	    {
+	      fprintf(stderr, "REV: in getvar for real, something fxxup, myidx in IS CORR is not 1 [%s]->[%s]\n", premod.c_str(), postmod.c_str());
+	      exit(1);
+	      }*/
+
+	  vector<size_t> newvals = vp.idx;
+	  //mycorr->set( myidx, newvals );
+	  //mycorr.insert( mycorr.end(), vp.idx.begin(), vp.idx.end() );
+	  mycorr->fill( newvals );
+	  //REV: literally pushed it directly, didn't need the corresp ;)
+	  
+	  
+	  
+	  return;
+	  
+	}
+    }
+  else  //it's just a normal var
+    {
+      vector<size_t> loc = ep.model->get_varloc( vartail );
+      //fprintf(stdout, "REV: doen getting varloc of requested var, size  is [%lu]\n", loc.size() );
+      if(loc.size() == 0 )
+	{
+	  if( ep.model->parent )
+	    {
+	      //REV: what is IDX here? haha...
+	      
+	      //Replace last one with parent and go?
+	      vector<elemptr> newtrace = trace;
+	      elemptr tmp( ep.model->parent, ep.idx );
+	      newtrace.pop_back();
+	      newtrace.push_back( tmp );
+	      return set_proper_var_widx(varname, newtrace, globals, vp); //ep.model->parent->getvar_widx( varname, ep.idx, trace );
+	    }
+	  else
+	    {
+	      fprintf(stderr, "GETVAR, could not get variable through model hierarchy. Note I am now at root level so I do not know model name...[%s]\n", varname.c_str());
+	      exit(1);
+	    }
+	}
+      else if(loc.size() > 1 )
+	{
+	  fprintf(stderr, "REV weird more than one var of same name [%s]\n", varname.c_str());
+	  exit(1);
+	}
+      else
+	{
+	  //REV: SANITY CHECK, this will return SAME if it is SAME,
+	  //Will return CONST if it is const ;)
+	  auto realvar = ep.model->vars[ loc[0] ];
+	  
+	  //REV: wat the fck, for pushing, I don't need corresp. I will make it...?
+	  auto corr = getcorresp_forvar( ep.model, trace, realvar );
+	  if( !corr )
+	    {
+	      fprintf(stderr, "REV: error no correspondence exists between models but I'm trying to link them? SHIT\n");
+	      exit(1);
+	    }
+	  if( ep.idx.size() != 1 )
+	    {
+	      fprintf(stderr, "REV: we have a problem houston...\n");
+	      exit(1);
+	    }
+
+	  if( corr->initialized() )
+	    {
+	      fprintf(stderr, "Trying to push back but already init fuck\n");
+	      exit(1);
+	    }
+
+	  realvar->addvalus( vp );
+
+	  //Need to set corresp to that which was passed to me.
+	  corr->fill( topushascorr );
+	  
+	  return;
+	}
+      
+    }
+} //end PUSH var proper
+		   
+
+
+
 
 
 //REV: Handle globals here
@@ -537,7 +697,6 @@ FUNCDECL(READ)
 
   varptr vp = get_proper_var_widx( varname, trace, globals );
 
-  fprintf(stdout, "READ: got varptr!\n");
   return vp;
   
 }
@@ -556,7 +715,7 @@ FUNCDECL(SET)
   
   string toexec = parsed[1];
   varptr res = DOCMD( toexec, trace, cmds, globals );
-  fprintf(stdout, "Returned from DOCMD in set\n");
+  //fprintf(stdout, "Returned from DOCMD in set\n");
 
   string varname = parsed[0];
 
@@ -584,7 +743,7 @@ FUNCDECL(SUM)
     {
       string toexec = parsed[x];
       varptr vp2 = DOCMD( toexec, trace, cmds, globals );
-      fprintf(stdout, "Returned from DOCMD in sum\n");
+      //fprintf(stdout, "Returned from DOCMD in sum\n");
       val.push_back( vp2.valu );
     }
 
@@ -619,7 +778,7 @@ FUNCDECL(MULT)
     {
       string toexec = parsed[x];
       varptr vp2 = DOCMD( toexec, trace, cmds, globals );
-      fprintf(stdout, "Returned from DOCMD in mult\n");
+      //fprintf(stdout, "Returned from DOCMD in mult\n");
       val.push_back( vp2.valu );
     }
 
@@ -644,7 +803,7 @@ FUNCDECL(DIV)
     {
       string toexec = parsed[x];
       varptr vp2 = DOCMD( toexec, trace, cmds, globals );
-      fprintf(stdout, "Returned from DOCMD in div\n");
+      //fprintf(stdout, "Returned from DOCMD in div\n");
       val.push_back( vp2.valu );
     }
 
@@ -674,7 +833,7 @@ FUNCDECL(DIFF)
     {
       string toexec = parsed[x];
       varptr vp2 = DOCMD( toexec, trace, cmds, globals );
-      fprintf(stdout, "Returned from DOCMD in diff\n");
+      //fprintf(stdout, "Returned from DOCMD in diff\n");
       val.push_back( vp2.valu );
     }
 
@@ -700,7 +859,7 @@ FUNCDECL(NEGATE)
   
   string toexec = parsed[0];
   varptr vp2 = DOCMD( toexec, trace, cmds, globals );
-  fprintf(stdout, "Returned from DOCMD in negate\n");
+  //fprintf(stdout, "Returned from DOCMD in negate\n");
   val = vp2.valu; //.push_back( vp2.valu );
   
   vp.valu = vect_negate( val );
@@ -721,7 +880,7 @@ FUNCDECL(EXP)
   
   string toexec = parsed[0];
   varptr vp2 = DOCMD( toexec, trace, cmds, globals );
-  fprintf(stdout, "Returned from DOCMD in exp\n");
+  //fprintf(stdout, "Returned from DOCMD in exp\n");
   val = vp2.valu ;
   
   vp.valu = vect_exp( val );
@@ -744,9 +903,9 @@ FUNCDECL(GAUSSRAND)
 
   
   varptr mvp = DOCMD( meanstr, trace, cmds, globals );
-  fprintf(stdout, "Returned from DOCMD in gaussrand1\n");
+  //fprintf(stdout, "Returned from DOCMD in gaussrand1\n");
   varptr svp = DOCMD( stdstr, trace, cmds, globals );
-  fprintf(stdout, "Returned from DOCMD in gaussrand2\n");
+  //fprintf(stdout, "Returned from DOCMD in gaussrand2\n");
   
   vp.valu = vect_normal( mvp.valu, svp.valu, cmds.RANDGEN );
   //std::normal_distribution<real_t> mydist( meanval, stdval );
@@ -772,10 +931,10 @@ FUNCDECL(UNIFORMRAND)
   string maxstr = parsed[1];
   
   varptr minval = DOCMD( minstr, trace, cmds, globals );
-  fprintf(stdout, "Returned from DOCMD in unirand1\n");
+  //fprintf(stdout, "Returned from DOCMD in unirand1\n");
   varptr maxval = DOCMD( maxstr, trace, cmds, globals );
 
-  fprintf(stdout, "Returned from DOCMD in unirand2\n");
+  //fprintf(stdout, "Returned from DOCMD in unirand2\n");
   
   //std::uniform_distribution<real_t> mydist( minval, maxval );
   vp.valu = vect_uniform( minval.valu, maxval.valu, cmds.RANDGEN );
@@ -819,16 +978,15 @@ FUNCDECL( SUMFORALLHOLES )
   string toexec = parsed[1];
   
   elemptr currmodel = get_curr_model( trace );
-  fprintf(stdout, "Got curr model\n");
+  
   hole myhole = currmodel.model->gethole( holename );
-  fprintf(stdout, "Got hole\n");
+  
   
   varptr vp;
   vp.valu = vector<real_t>(1, 0);
   
   for( size_t h=0; h<myhole.members.size(); ++h)
     {
-      fprintf(stdout, "Got hole member [%lu] of model\n", h);
       std::shared_ptr<symmodel> holemod = myhole.members[h];
       
       //REV: this is the hack to get a single value out of something that would return multiple.
@@ -844,7 +1002,6 @@ FUNCDECL( SUMFORALLHOLES )
       //Fuck all that for now? If I am just reading, that is fine. Problem is if I try to write or some shit? It causes problems, because it returns a READ type array
       //that is the issue. At the most basic level, when I want to SET, I directly get the array anyway. How do I know what SET size is.
       varptr v = exec_w_corresp( toexec, holemod, trace, cmds, globals );
-      fprintf(stdout, "Returned from exec w corresp, SUMFORALLHOLES\n");
       //if( v.idx.size() != 1 || v.valu.size() != 1 )
       if( v.valu.size() != 1 )
 	{
@@ -860,7 +1017,7 @@ FUNCDECL( SUMFORALLHOLES )
       vp.valu[0] += v.valu[0];
       
     }
-  fprintf(stdout, "Finished sum for all holes\n");
+  
   return vp;
 } //end SUMFORALLHOLES
 
@@ -898,7 +1055,6 @@ FUNCDECL( SUMFORALLCONNS )
       size_t localidx = mypost[ i ];
       newtrace[ newtrace.size()-1 ].idx = vector<size_t>(1, localidx); //set idx to correct idx for execution.
       varptr v2 = DOCMD( arg, newtrace, cmds, globals );
-      fprintf(stdout, "Returned from DOCMD in SUM FOR ALL CONNS\n");
       if(v2.valu.size() != 1)
 	{
 	  fprintf(stderr, "REV: multi call sumfor all conns in multi-size v2 valu\n");
@@ -1021,7 +1177,6 @@ FUNCDECL( MULTFORALLCONNS )
       size_t localidx = mypost[ i ];
       newtrace[ newtrace.size()-1 ].idx = vector<size_t>(1, localidx); //set idx to correct idx for execution.
       varptr v2 = DOCMD( arg, newtrace, cmds, globals );
-      fprintf(stdout, "Returned from DOCMD in MULT FOR ALL CONNS\n");
       if(v2.valu.size() != 1)
 	{
 	  fprintf(stderr, "REV: multi call sumfor all conns in multi-size v2 valu\n");
@@ -1033,6 +1188,267 @@ FUNCDECL( MULTFORALLCONNS )
   return vp;
   
 } //end MULTFORALLCONNS
+
+
+FUNCDECL( SQRT )
+{
+  fprintf( stdout, "Executing SQRT arg: [%s]\n", arg.c_str() );
+  vector<string> parsed = cmds.doparse( arg );
+  if( parsed.size() != 1 )
+    { exit(1); }
+
+  varptr vp;
+  
+  vector<real_t> val;
+  
+  string toexec = parsed[0];
+  varptr vp2 = DOCMD( toexec, trace, cmds, globals );
+  //fprintf(stdout, "Returned from DOCMD in exp\n");
+  val = vp2.valu ;
+  
+  vp.valu = vect_sqrt( val );
+  
+  return vp;
+}
+
+FUNCDECL( SQR )
+{
+  fprintf( stdout, "Executing SQR arg: [%s]\n", arg.c_str() );
+  vector<string> parsed = cmds.doparse( arg );
+  if( parsed.size() != 1 )
+    { exit(1); }
+
+  varptr vp;
+  
+  vector<real_t> val;
+  
+  string toexec = parsed[0];
+  varptr vp2 = DOCMD( toexec, trace, cmds, globals );
+  //fprintf(stdout, "Returned from DOCMD in exp\n");
+  val = vp2.valu ;
+  
+  vp.valu = vect_sqr( val );
+  
+  return vp;
+}
+
+
+
+FUNCDECL( NEWLOCAL )
+{
+  //Ret doesnt matter.
+  //Add a local variable to GLOBAL
+  //The name needs to be resolved?
+  vector<string> parsed = cmds.doparse( arg );
+  if( parsed.size() != 1 )
+    { exit(1); }
+  
+  vector<string> functparse = cmds.fparse( arg );
+  string fname = functparse[0];
+  if( functparse.size() != 1 )
+    { exit(1); }
+
+
+  //He better not have named it something like /blah/yolo/faggit
+  globals.addempty( fname );
+
+  varptr emptyv;
+  
+  return emptyv;
+}
+
+FUNCDECL( PUSHFORALL )
+{
+  //Ret doesn't matter, but will coalesce returned guys into single array and push to target specified var.
+
+  //Basically, I do a "FORALL", but the results I get back, I push :)
+  //Are FORALL coalesced anyway?
+  
+  vector<string> parsed = cmds.doparse( arg );
+  if( parsed.size() != 3 )
+    {
+      fprintf(stderr, "PUSHFORALL [%s], not 3 args \n", arg.c_str());
+      exit(1);
+    }
+
+  string targmodel = parsed[0];
+  string pushto = parsed[1];
+  string toexec = parsed[2];
+  fprintf(stdout, "Will FORALL execute [%s] for every member of [%s] (seen from model [%s]), PUSHING TO [%s]\n", toexec.c_str(), targmodel.c_str(), get_curr_model(trace).model->buildpath().c_str(), pushto.c_str());
+
+  //Get model refererenced from here... must be initialized/size. OK. Can it be a var?
+  //Note the model must be found inside trace? Yea...
+  auto ep = findmodel( targmodel, trace, globals);
+  auto pushep = findmodel( pushto, trace, globals);
+  
+  if( !ep.model )
+    {
+      fprintf(stderr, "Couldnt find EP model in PUSHFORALL\n");
+      exit(1);
+    }
+  if( !pushep.model )
+    {
+      fprintf(stderr, "Couldnt find push EP model in PUSHFORALL\n");
+      exit(1);
+    }
+
+  //REV: this automatically will execute for every one, getting it back, and
+  //appending...
+  size_t modelsize = ep.model->get_modelsize();
+  if(modelsize == 0 )
+    {
+      //Fuck...
+      fprintf(stderr, "ERROR, model size is zero!\n");
+      exit(1);
+    }
+
+  //vector<size_t> idxs( modelsize );
+  //std::iota(std::begin(idxs), std::end(idxs), 0);
+  //std::generate( idxs.begin(), idxs.end(), UniqueNumber );
+  
+  //ep.idx = idxs;
+  
+  //IDX overwrites it, I use IDX directly ;)
+  vector<elemptr> newtrace = trace;
+  ep.idx = vector<size_t>(1,0);
+  newtrace.push_back( ep );
+  //elemptr.idx = vector<size_t>(1, x); //1 through N? Does it make more sense to
+  //do one at a time and append them, or to do them all together here?
+  //What if each model is doing some sneaky shit like um, nested forall? That's fine.
+  //In that case, our IDX would be multi as well. I wouldn't know which is "pre",
+  //so lol. Inside of me, ref to PRE would look up old idx values through TRACE
+  //What would happen if IDX at that time point is like idx[1][2][3][4] etc.?
+  //And now it is like a gazillion. So which go with which? Each IDX generated some
+  //guys... I kind of like this way better...but...let's go with all together.
+  
+  //Assuming no mumbo fuck-ups this will work.
+  //varptr vp = DOCMD( toexec, trace, cmds, globals );
+
+  varptr fullvp;
+
+  vector<size_t> corr;
+  
+  for(size_t x=0; x<modelsize; ++x)
+    {
+      newtrace[ newtrace.size() -1].idx[ 0 ] = x;
+      varptr vp = DOCMD( toexec, trace, cmds, globals );
+      fullvp.valu.insert( fullvp.valu.end(), vp.valu.begin(), vp.valu.end() );
+      fullvp.idx.insert( fullvp.idx.end(), vp.idx.begin(), vp.idx.end() );
+      //REV: FUCK FUCK FUCK, do I need to insert idxs as corresp?
+
+      
+      //I either got SIZE_T or VAL_T.
+      if( vp.idx.size() > vp.valu.size() )
+	{
+	  size_t nret = vp.idx.size();
+	  vector<size_t> toaddcorr( nret, x );
+	  corr.insert( corr.end(), toaddcorr.begin(), toaddcorr.end() );
+	  //idxs
+	}
+      else
+	{
+	  size_t nret = vp.valu.size();
+	  vector<size_t> toaddcorr( nret, x );
+	  corr.insert( corr.end(), toaddcorr.begin(), toaddcorr.end() );
+	  //valus
+	}
+
+      //Fine, problem is, what to add for the POSTSYN corresps?
+      //In other words, for each one generated, it must know what that number was
+      //I need to generate for THAT as well? Fuck... That's fine though.
+    }
+
+  //REV: HERE HERE HERE. Note, I need to fucking PUSH to proper var, not just
+  //SET IT!@!!
+  //Gotta know which corr to set too!
+  
+  push_proper_var_widx( pushto, trace, globals, fullvp, corr );
+  
+  //YESSSSSSSSSSSSSSSSSSSSS  
+  return fullvp;
+}
+
+struct c_unique
+{
+  int current;
+  c_unique() {current=0;}
+  int operator()() {return ++current;}
+};
+
+
+
+FUNCDECL( FORALL )
+{
+  //May return IDXs or REALS. Will always return large of iterated size.
+  //Most important thing, this does NOT carry through CORRESP. In other words,
+  //all local variables use their local variable that I create!
+
+  //Executes CMD for each guy, and returns. Of course, nothing special about that
+  //There is really no need to specify, except it explicitly scaffolds off size
+  //of a given model/target, withoutu going through corresp.
+
+  vector<string> parsed = cmds.doparse( arg );
+  if( parsed.size() != 2 )
+    {
+      fprintf(stderr, "FORALL [%s], not 2args \n", arg.c_str());
+      exit(1);
+    }
+
+  string targmodel = parsed[0];
+  string toexec = parsed[1];
+  fprintf(stdout, "Will FORALL execute [%s] for every member of [%s] (seen from model [%s])\n", toexec.c_str(), targmodel.c_str(), get_curr_model(trace).model->buildpath().c_str());
+
+  //Get model refererenced from here... must be initialized/size. OK. Can it be a var?
+  //Note the model must be found inside trace? Yea...
+  auto ep = findmodel( targmodel, trace, globals);
+
+  if( !ep.model )
+    {
+      fprintf(stderr, "Couldnt find model in FORALL\n");
+      exit(1);
+    }
+  size_t modelsize = ep.model->get_modelsize();
+  if(modelsize == 0 )
+    {
+      //Fuck...
+      fprintf(stderr, "ERROR, model size is zero!\n");
+      exit(1);
+    }
+
+  //It's doing this for each postsyn, e.g. blah...OK. It will return the list directly.
+  //REV: be careful with how I handle
+  //Note, X is the idx?!!!!. I will compress them here!!!
+  //Or, do I just directly access all variables?
+  //There is no corresp yet, I am constructing and returning.
+  vector<size_t> idxs( modelsize );
+  std::iota(std::begin(idxs), std::end(idxs), 0);
+  //std::generate( idxs.begin(), idxs.end(), UniqueNumber );
+
+  ep.idx = idxs;
+  
+  //IDX overwrites it, I use IDX directly ;)
+  vector<elemptr> newtrace = trace;
+  newtrace.push_back( ep );
+  //elemptr.idx = vector<size_t>(1, x); //1 through N? Does it make more sense to
+  //do one at a time and append them, or to do them all together here?
+  //What if each model is doing some sneaky shit like um, nested forall? That's fine.
+  //In that case, our IDX would be multi as well. I wouldn't know which is "pre",
+  //so lol. Inside of me, ref to PRE would look up old idx values through TRACE
+  //What would happen if IDX at that time point is like idx[1][2][3][4] etc.?
+  //And now it is like a gazillion. So which go with which? Each IDX generated some
+  //guys... I kind of like this way better...but...let's go with all together.
+
+  //Assuming no mumbo fuck-ups this will work.
+  varptr vp = DOCMD( toexec, trace, cmds, globals );
+  
+  //for(size_t x=0; x<modelsize; ++x)
+  //  {
+      //newtrace[ newtrace.size() -1].idx[ 0 ] = x;
+      //varptr vp = DOCMD( toexec, trace, cmds, globals );
+  //  }
+
+  return vp;
+}
 
 
 
@@ -1079,6 +1495,10 @@ cmdstore::cmdstore()
     ADDFUNCT( MULTFORALLHOLES );
     ADDFUNCT( SUMFORALLCONNS );
     ADDFUNCT( MULTFORALLCONNS );
+    
+    ADDFUNCT( NEWLOCAL );
+    ADDFUNCT( FORALL );
+    ADDFUNCT( PUSHFORALL );
   }
 
 
@@ -1122,6 +1542,144 @@ vector<real_t> symvar::getvalus( const vector<size_t>& _idx )
   return ret;
   
 }
+
+
+varptr symvar::vgetvalus( const vector<size_t>& idx )
+{
+  varptr tmp;
+  
+  //Ugh, no type checking fuck this.
+  if( !init )
+    {
+      tmp.valu = vector<real_t>( idx.size(), 0);
+      return tmp;
+    }
+  
+  if( isint() )
+    {
+      tmp.idx = getivalus( idx );
+    }
+  else
+    {
+      tmp.valu = getvalus( idx );
+    }
+
+  return tmp;
+  
+  
+}
+
+void symvar::vsetvalus( const vector<size_t>& idx, const varptr& v )
+{
+  if( !init )
+    {return;}
+
+  if( isint() )
+    {
+      setivalus( idx, v.idx );
+    }
+  else
+    {
+      setvalus(idx, v.valu );
+    }
+  return;
+}
+
+  
+size_t symvar::getivalu( const size_t& _idx )
+{
+   if( !init )
+    {
+      return 0;
+    }
+
+  if( isconst )
+    {
+      return ivalu[0];
+    }
+  
+  if( _idx >= ivalu.size() )
+    {
+      fprintf(stderr, "In symvar, getivalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", _idx, ivalu.size(), name.c_str(), parent->buildpath().c_str());
+      exit(1);
+    }
+
+  return ivalu[_idx];
+  
+  
+}
+vector<size_t> symvar::getivalus( const vector<size_t>& _idx )
+{
+  if( !init )
+    {
+      return vector<size_t>( _idx.size(), 0);
+    }
+
+  vector<size_t> ret;
+  for(size_t x=0; x<_idx.size(); ++x)
+    {
+      ret.push_back( getivalu( _idx[x] ) );
+    }
+  
+  return ret;
+}
+
+
+void symvar::setivalu( const size_t& _idx, const size_t& val )
+{
+  if( !init )
+    {
+      //do nothing
+      //return;
+      return;
+    }
+  else if( isconst )
+    {
+      if( _idx != 0 )
+	{
+	  fprintf( stderr, "Whoa error in setval, isconst but idx zero element is not 0...\n");
+	  exit(1);
+	}
+      
+      ivalu[0] = val;
+      
+    }
+  else
+    {
+      if( _idx >= ivalu.size() )
+	{
+	  fprintf(stderr, "In symvar, setvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", _idx, ivalu.size(), name.c_str(), parent->buildpath().c_str());
+	  exit(1);
+	}
+      
+      ivalu[_idx] = val;
+    }
+}
+
+void symvar::setivalus( const vector<size_t>& _idx, const vector<size_t>& val )
+{
+  if( !init )
+    {
+      //do nothing
+    }
+  else
+    {
+  
+      if(val.size() != _idx.size())
+	{
+	  fprintf(stderr, "setvalus, error idx size and val size not same\n");
+	  exit(1);
+	}
+  
+      for(size_t x=0; x<_idx.size(); ++x)
+	{
+	  setivalu( _idx[x], val[x] );
+	}
+    }
+  
+  return;
+}
+ 
 
 void symvar::setvalu( const size_t& _idx, const real_t& val )
 {
@@ -1379,9 +1937,13 @@ elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>
 
 
 void global_store::addempty( const string& localname )
-  {
-    models.push_back( symmodel::Create( "", "", localname ) );
-  }
+{
+  //My type is "TEMP"
+  auto nguy = symmodel::Create( "__TEMPVAR", "__TEMPVAR", localname );
+  //A single, unnamed variable haha.
+  nguy->addvar( "__TMPVARNAME", "__TMPVARTYPE");
+  models.push_back( nguy );
+}
 
 
 vector<size_t> global_store::modellocs( const string& s )
@@ -1623,6 +2185,24 @@ vector<real_t> vect_exp( const vector<real_t>& val )
     }
   return r;
 }
+vector<real_t> vect_sqrt( const vector<real_t>& val )
+{
+  vector<real_t> r = val;
+  for(size_t x=0; x<r.size(); ++x)
+    {
+      r[x] = sqrt(r[x]);
+    }
+  return r;
+}
+vector<real_t> vect_sqr( const vector<real_t>& val )
+{
+  vector<real_t> r = val;
+  for(size_t x=0; x<r.size(); ++x)
+    {
+      r[x] = r[x]*r[x];
+    }
+  return r;
+}
 
 vector<real_t> vect_normal( const vector<real_t>& meanval, const vector<real_t>& stdval, std::default_random_engine& RANDGEN )
 {
@@ -1676,3 +2256,31 @@ string get_containing_model_path( const string& parsearg, string& vartail )
       return CAT( parsed, "/" );
     }
 }
+
+
+void symvar::addvalus( const varptr& vp )
+{
+  if( vp.idx.size() > 0 )
+    {
+      ivalu.insert( ivalu.end(), vp.idx.begin(), vp.idx.end() );
+    }
+
+  else
+    {
+      valu.insert( valu.end(), vp.valu.begin(), vp.valu.end() );
+    }
+}
+
+
+void corresp::fill( const vector<size_t>& arg )
+  {
+    correspondence.insert( correspondence.end(), arg.begin(), arg.end() );
+    numidx = vector<size_t>( correspondence.size(), 1 );
+    
+    startidx.resize( correspondence.size() );
+    std::iota(std::begin(startidx), std::end(startidx), 0);
+
+    //This will mark init, and also fill the other side ;)
+    parent->notify_filled_corresp( targmodel );
+    return;
+  }

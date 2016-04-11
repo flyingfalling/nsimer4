@@ -88,6 +88,15 @@ struct symvar
   
   //real_t valu;
   std::vector<real_t> valu;
+  std::vector<size_t> ivalu; //ROFL, I REALLY ADDED IT!!
+  
+  bool isint()
+  {
+    return (ivalu.size() > 0);
+  }
+
+  varptr vgetvalus( const vector<size_t>& idx );
+  void vsetvalus( const vector<size_t>& idx, const varptr& v );
   
   size_t read=false;
   size_t written=false;
@@ -105,10 +114,18 @@ struct symvar
   
   real_t getvalu( const size_t& idx );
   vector<real_t> getvalus( const vector<size_t>& idx );
+
+  size_t getivalu( const size_t& idx );
+  vector<size_t> getivalus( const vector<size_t>& idx );
   
 
   void setvalu( const size_t& idx, const real_t& val );
   void setvalus( const vector<size_t>& idx, const vector<real_t>& val );
+  
+  void setivalu( const size_t& idx, const size_t& val );
+  void setivalus( const vector<size_t>& idx, const vector<size_t>& val );
+
+  void addvalus( const varptr& vp );
  
   void reset()
   {
@@ -130,6 +147,8 @@ struct symvar
   {
     isconst=true;
   }
+
+  
   
   //Default is "my location"
 symvar( const string& n, const std::shared_ptr<symmodel>& p )
@@ -272,6 +291,8 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
       }
     return ret;
   }
+
+  void fill( const vector<size_t>& arg );
   
   //virtual size_t get( const size_t& s, const size_t& offset ) = 0;
   virtual vector<real_t> getallvar( const size_t& s, const symvar& var ) = 0;
@@ -468,6 +489,13 @@ vector<real_t> vect_normal( const vector<real_t>& meanval, const vector<real_t>&
 vector<real_t> vect_uniform( const vector<real_t>& minval, const vector<real_t>& maxval, std::default_random_engine& RANDGEN );
 
 
+vector<real_t> vect_sqrt( const vector<real_t>& val );
+
+vector<real_t> vect_sqr( const vector<real_t>& val );
+
+
+
+
 
 std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ, const std::shared_ptr<symvar>& var );
 
@@ -523,6 +551,10 @@ FUNCDECL(SUMFORALLHOLES);
 FUNCDECL(SUMFORALLCONNS);
 FUNCDECL(MULTFORALLHOLES);
 FUNCDECL(MULTFORALLCONNS);
+
+FUNCDECL( NEWLOCAL );
+FUNCDECL( FORALL );
+FUNCDECL( PUSHFORALL );
 
 
 struct updatefunct_t
@@ -819,7 +851,7 @@ struct symmodel
       }
     return varsready;
   }
-
+  
   //REV: fuck, it must be a CONN or we're fucked? ;)
   void fill_corresp( const std::shared_ptr<corresp>& hiscorr )
   {

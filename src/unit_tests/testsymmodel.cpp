@@ -131,7 +131,7 @@ std::shared_ptr<symmodel> test_build()
   auto Iinj = symmodel::Create( "Iinj", "current" );
   Iinj->addvar( "I", "current|uA" );
   
-
+  
 
   
   auto spksyn = symmodel::Create( "spksyn", "spksyn");
