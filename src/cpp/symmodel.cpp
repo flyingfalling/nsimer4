@@ -1,6 +1,9 @@
 //REV: 4 Apr 2016
 //Contains symmodel, for constructing symbolic models
 
+//TODO fix types of guys...
+
+
 #include <symmodel.h>
 
 vector<string> parse( const string& name)
@@ -17,7 +20,8 @@ vector<string> parsetypes( const string& name)
 
 vector<string> parsecorr( const string& name)
 {
-  bool emptyrepeats=false;
+  //bool emptyrepeats=false;
+  bool emptyrepeats=true;
   return tokenize_string( name, "->", emptyrepeats );
 }
 
@@ -40,6 +44,13 @@ vector<string> parsecorr( const string& name)
 //I assume it needs blah. But what if I pass a size/start cmd as well? Then I can construct that way? rofl fuck me.
 
 // I always specify "big-small". And it generates everything else ;)
+
+
+//REV: first, fix this.
+//Make sure it searches through globals as well (to find variables, not functs)
+//Make sure corresp are appropriately checked?
+//Vartypes contain their own thing, like they might be "PARAM", in which case, I don't look for a corresp or some shit.
+//Or I return a special "const" guy that always returns 0 heh.
 FUNCDECL(DOCMD)
 {
   //First, replace it with locals...
@@ -85,8 +96,214 @@ FUNCDECL(DOCMD)
   return retval;
 }
 
+//Problem is it has a pointer based on what "type" is, and I have to selectively change based on that heh...
+//Just do in READ and SET, much easier (problem is when I go to try and find the one to push to, etc.)
+
+//Anyway, fine...
+
+//Issue now is to sort out my method of referencing them ! :)
+//After parsing "varname", I do:
+//If IDX, I return IDX,
+//If SIZE, I return that model's SIZE (note, model could be a corresp, or a var!)
+//If X->Y, it is a corrsp. So, I'm going to push back to CORRESP, or something...
+//That's fine. I want to get..?
+
+//Note, I'm going to generate for syn2-1. Specifically, I reference presyn and postsyn. So, I even more specifically. So, I specifically want to do ->presyn and ->postsyn.
+//-> indicates "source" Ah, got it, empty means nothing. -> means conn to X. So, I divide by -> and it gives left is empty, right is blah. Fine. Right means "me" :)
+
+//Shit, problem, what does X->Y mean where there is slashes? I assume in both cases, it refers to a CORRESPONDENCE. I.e. the correspondence itself.
+//Yea, so literally, for presyn model idxs (X) that are passed, what are corresponding postsyn model idxs. Note, I "getall" for each.
+
+//Easiest to just have only real types in there...problem is when I return "idxs" it does something...
+//Note, in SET I have to do something to...?
 
 
+
+elemptr findmodel( const string& s, const vector<elemptr>& trace, const global_store& globals )
+{
+  auto mod =  get_model_widx( s, trace ); //This only iterates up to top level within me....I need to do a full search.
+  if( mod )
+    {
+      return mod;
+    }
+  else
+    {
+      mod = globals.findmodel( s );
+      if( mod )
+	{
+	  return mod;
+	}
+      else
+	{
+	  //try searching root?
+	  elemptr ep = get_curr_model(trace);
+	  auto root = ep.model->get_root();
+	  elemptr tmp( root, ep.idx );
+	  vector<elemptr> newtrace;
+	  newtrace.push_back( tmp );
+	  mod = get_model_widx( s, newtrace ); //yolo.
+	  if( mod )
+	    {
+	      return mod;
+	    }
+	  else
+	    {
+	      fprintf(stderr, "ERRO could not find model, even through globals, parents, and bubbling through trace (last trace is [%s])\n" , s.c_str(), ep.model->buildpath().c_str());
+	      exit(1);
+	    }
+	}
+    }
+  //FINDS MODEL IN BOTH GLOBALS AND LOCALS?
+}
+
+bool check_idx( const string& varname )
+{
+  if( varname.compare( "IDX" ) == 0 )
+    {
+      return true;
+    }
+  return false;
+}
+
+bool check_issize( const string& varname )
+8{
+  if( varname.compare( "SIZE" ) == 0 )
+    {
+      return true;
+    }
+  return false;
+}
+
+//REV: shit, if I parse "/" will it give me "nothing" or will it give me ""/""?
+//I'm leaning towards nothing? Heh...
+bool check_iscorr( const string& varname, string& presmodelname, string& postmodelname )
+{
+  vector<string> res = parsecorr( varname );
+  
+  if( res.size() == 2 )
+    {
+      premodelname = res[0];
+      postmodelname = res[1];
+      return true;
+    }
+  return false;
+}
+
+
+//REV: trace will contain the most recent index? I guess? Why use trace????
+//REV: trae contains last idx?
+varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace, const global_store& globals )
+{
+  varptr vp;
+  
+  string vartail;
+  string premod, postmod;
+  bool iscorr = check_iscorr( varname, premod, postmod );
+
+  //With iscorr, the model itself is the ->. In other words, I will parse it first into pre-> and post->
+  //I will *directly* get the pre model. In pre model, I will directly access the variable ->POSTMODEL
+
+  string containingpath = get_containing_model_path( varname, vartail );
+
+  elemptr ep;
+  if( !iscorr )
+    {
+      ep = findmodel( containingpath, trace, globals );
+    }
+  else
+    {
+      //Problem is, if it is "", we are fucked? It *always* must be called from inside a model. If the model is syn2-1 fine. That will be on trace?
+      ep = findmodel( premod, trace, globals );
+    }
+
+  bool isidx = check_idx( vartail );
+  bool issize = check_issize( vartail );
+
+  if( isidx )
+    {
+      //get idx in "that" model
+    }
+  else if( issize )
+    {
+      //get size of "that" model
+    }
+  else if( iscorr )
+    {
+      //get final model haha
+      elemptr m2 = findmodel( postmod, trace, globals );
+      auto curr = get_current_model(trace);
+      corresp mycorr;
+      bool foundcorr = curr.model->getcorresp( m2, mycorr );
+      if( !foundcorr )
+	{
+	  fprintf(stderr, "REV: rofl stupid richard, trying to read a corresp that doesn't exist\n");
+	  exit(1);
+	}
+      else
+	{
+	  //build and return from corresp. Based on idx.
+	  //Do I automatically append?
+	  vector<size_t> myidx = curr.idx;
+	  if(myidx.size() != 1 )
+	    {
+	      fprintf(stderr, "REV: in getvar for real, something fxxup, myidx in IS CORR is not 1 [%s]->[%s]\n", premod.c_str(), postmod.c_str());
+	      exit(1);
+	    }
+	  vector<size_t> ret = mycorr.getall( myidx[0] );
+	  vp.idx = ret;
+	  return vp;
+	}
+    }
+  else
+    {
+      vector<size_t> loc = ep.model->get_varloc( vartail );
+      //fprintf(stdout, "REV: doen getting varloc of requested var, size  is [%lu]\n", loc.size() );
+      if(loc.size() == 0 )
+	{
+	  if( ep.model->parent )
+	    {
+	      //REV: what is IDX here? haha...
+	      return ep.model->parent->getvar_widx( varname, ep.idx, trace );
+	    }
+	  else
+	    {
+	      fprintf(stderr, "GETVAR, could not get variable through model hierarchy. Note I am now at root level so I do not know model name...[%s]\n", varname.c_str());
+	      exit(1);
+	    }
+	}
+      if(loc.size() > 1 )
+	{
+	  fprintf(stderr, "REV weird more than one var of same name [%s]\n", varname.c_str());
+	  exit(1);
+	}
+      
+      //actualcontaining = shared_from_this();
+      return ep.model->vars[ loc[0] ];
+      
+      //real_t val;
+      vector<real_t> vals = var->getvalus( ep.idx );
+      vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
+      //varptr vp( vals, idxs );
+      vp.valu = vals;
+      return vp;
+    }
+}
+
+void set_proper_var()
+{
+  
+}
+		     
+
+
+//REV: Handle globals here
+//REV: handle checking if name is a READ_CORRESP or READ_IDX or READ_SIZE or READ_NORMAL, and return appropriately.
+//For all other guys, if type is incorrect, they error out (e.g. trying to pass idx to a mult funct?)
+//Fuck it, if user fucks up, that's his problem? lol...
+
+//REV: the models return the variable things (?) to write to? Nah, do it here...?
+//They can return a corresp or a var wrapped? I'll have to code all this logic anyways...for CUDA
+//Main problem is that I get "containing model" which is fine. It returns the containing model. And then, after that,
 FUNCDECL(READ)
 {
   fprintf( stdout, "Executing READ arg: [%s]\n", arg.c_str() );
@@ -110,18 +327,17 @@ FUNCDECL(READ)
       fprintf(stderr, "REV wtf var doesn't have parent?\n");
       exit(1);
     }
+  
   std::shared_ptr<symmodel> contmodel = var->parent; //haha, true containing model... implies it stepped up  hierarchy some.
   
   std::shared_ptr<corresp> corr = getcorresp( contmodel, trace );
     
-  real_t val;
-
-  //REV: handles not being initialized
-  val = var->getvalu( ep.idx );
-
-  
-  return val;
-}
+  //real_t val;
+  vector<real_t> vals = var->getvalus( ep.idx );
+  vector<size_t> idxs; //what are these? Literally idxs? Make sure idxs always points directly there? Nah... Just leave it empty?
+  varptr vp( vals, idxs );
+  return vp;
+} //end READ
 
 
 FUNCDECL(SET)
@@ -134,12 +350,13 @@ FUNCDECL(SET)
     }
 
   string toexec = parsed[1];
-  real_t val = DOCMD( toexec, trace, cmds );
+  varptr res = DOCMD( toexec, trace, cmds, globals );
+  real_t vals = res.valu; //OR, res.idx, if it is a size_t guy? FUCK It depends what type the variable is I'm setting. Check for CORRESP here! :)
   
   string varname = parsed[0];
-
+  
   string vartail;
-
+  
   //This is the index I will use. So problem is e.g. if I want to 'set' multiple, I need to um, set blah.idx to that thing. Ah...this is problem. Idxs being set to,
   //they are also specified when I pass into the higher/nextlevel DOCMD. So it will (theoretically) execute for each of those as well.
   //In other words, trace is not only a single index, but the list of corresponding idxs. That is fine.
@@ -159,7 +376,7 @@ FUNCDECL(SET)
   std::shared_ptr<corresp> corr = getcorresp( contmodel, trace );
     
   //Could have been read and set separately?
-  var->setvalu( ep.idx, val );
+  var->setvalus( ep.idx, vals );
   
   return -66666666666;
 }
@@ -363,7 +580,18 @@ FUNCDECL( SUMFORALLHOLES )
       
       //Fuck all that for now? If I am just reading, that is fine. Problem is if I try to write or some shit? It causes problems, because it returns a READ type array
       //that is the issue. At the most basic level, when I want to SET, I directly get the array anyway. How do I know what SET size is.
-      val += exec_w_corresp( toexec, holemod, trace, cmds );
+      varptr v = exec_w_corresp( toexec, holemod, trace, cmds );
+      if( v.idx.size() != 1 || v.valu.size() != 1 )
+	{
+	  fprintf(stderr, "ERROR in SUMFORALLHOLES due to exec_w_corresp reutrning non-single value/idx...");
+	  exit(1);
+	}
+      if( v.idx[0] != 0 )
+	{
+	  fprintf(stderr, "Huh, SUM FOR ALL HOLES still error from DOCMD returning unrealistic idx??!!\n");
+	  exit(1);
+	}
+      val += v.valu[0]; //same as v.valu[v.idx[0] ]?
     }
   return val;
 } //end SUMFORALLHOLES
@@ -448,8 +676,20 @@ FUNCDECL( MULTFORALLHOLES )
   for( size_t h=0; h<myhole.members.size(); ++h)
     {
       std::shared_ptr<symmodel> holemod = myhole.members[h];
+
+      varptr v = exec_w_corresp( toexec, holemod, trace, cmds );
+      if( v.idx.size() != 1 || v.valu.size() != 1 )
+	{
+	  fprintf(stderr, "ERROR in MULTFORALLHOLES due to exec_w_corresp reutrning non-single value/idx...");
+	  exit(1);
+	}
+      if( v.idx[0] != 0 )
+	{
+	  fprintf(stderr, "Huh, MULT FOR ALL HOLES still error from DOCMD returning unrealistic idx??!!\n");
+	  exit(1);
+	}
+      val *= v.valu[0]; //same as v.valu[v.idx[0] ]?
       
-      val *= exec_w_corresp( toexec, holemod, trace, cmds );
     }
   return val;
 } //end MULTFORALLHOLES
@@ -558,6 +798,24 @@ real_t symvar::getvalu( const size_t& idx )
   
 }
 
+vector<real_t> symvar::getvalus( const vector<size_t>& idx )
+{
+  
+    if( !init )
+      {
+	return vector<real_t>(0);
+      }
+
+    vector<real_t> ret;
+    for(size_t x=0; x<idx.size(); ++x)
+      {
+	ret.push_back( getvalu( idx[x] ) );
+      }
+
+    return ret;
+  
+}
+
 void symvar::setvalu( const size_t& idx, const real_t& val )
 {
   if( !init )
@@ -573,6 +831,28 @@ void symvar::setvalu( const size_t& idx, const real_t& val )
     }
 
   valu[idx] = val;
+  return;
+}
+
+void symvar::setvalus( const vector<size_t>& idx, const vector<real_t>& val )
+{
+  if( !init )
+    {
+      //do nothing
+      return;
+    }
+
+  if(val.size() != idx.size())
+    {
+      fprintf(stderr, "setvalus, error idx size and val size not same\n");
+      exit(1);
+    }
+  
+  for(size_t x=0; x<idx.size(); ++x)
+    {
+      setvalu( idx[x], val[x] );
+    }
+  
   return;
 }
 
@@ -619,7 +899,14 @@ bool check_cmd_is_multi( const string& s )
   return false;
 }
 
-real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds )
+
+//REV: TODO NEED TO REWRITE THIS TO HANDLE idx being vector<size_t>
+//What does this do? This takes a string toexec, target model, and trace, and executes it.
+//This is *ONLY* calle when going through a hole I think (i.e. MULTFORALLHOLES, or SUMFORALLHOLES). In other words, nothing has changed, we now
+//This will always only compute a SINGLE value, regardless of multi-idxs etc.
+
+//real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds )
+varptr exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds, global_store& globals )
 {
   //RE-parse toexec, to check what function it is.
   //If it is one of the given functions, then we go.
@@ -637,13 +924,15 @@ real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel
       fprintf(stderr, "ERROR: parsed size < 1 (or str len < 1). Exec [%s]\n", toexec.c_str());
       exit(1);
     }
-
+  
   
   if( check_cmd_is_multi( toexec ) )
     {
       //Exec for all corresp.
-      //curr model is already pushed back. We need toarget model)
-      size_t arbitrary_idx = 666;
+      //curr model is already pushed back. We need target model
+      //Note, this arbitrary idx MUST BE OVERWRITTEN by the caller, set to appropriate value.
+      size_t arbitrary_idxval = 666;
+      vector<size_t> arbitrary_idx( 1, arbitrary_idx );
       elemptr tmpelem( m, arbitrary_idx ); //idx is arbitrary
       vector<elemptr> newtrace = trace;
       newtrace.push_back( tmpelem );
@@ -651,25 +940,41 @@ real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel
       //Note toexec is the whole thing passed, we didn't strip it.
       //we are just handling it in a special way based on #args and pushing back to trace.
       //DOCMD will strip the first part and execute it.
-      return DOCMD( toexec, newtrace, cmds );
+      return DOCMD( toexec, newtrace, cmds, globals );
     }
   else //Otherwise, I just execute it. But, in that, I make sure that corresp is not fucked up.
     {
       elemptr currmodel = get_curr_model(trace);
+
+      //REV: Do I need to be careful here with GLOBALS vs etc.? Nah...
+      
       std::shared_ptr<corresp> corr = getcorresp( currmodel.model, m );
-      size_t curridx = currmodel.idx;
+      //size_t curridx = currmodel.idx;
+      vector<size_t> vcurridx = currmodel.idx;
+      
+      if( vcurridx.size() != 1 )
+	{
+	  fprintf(stderr, "REV: whoa (ERROR), doing nested exec_w_corresp\n");
+	  exit(1);
+	}
+      
+      size_t curridx = vcurridx[0];
+      
       vector<size_t> c = corr->getall( curridx );
+      
       if( c.size() != 1 )
 	{
 	  fprintf(stderr, "REV: SUPER ERROR in exec_w_corresp, trying to execute [%s] but model [%s]->[%s] is one-to-many (or zero) ([%lu])\n", toexec.c_str(), currmodel.model->buildpath().c_str(), m->buildpath().c_str(), c.size() );
 	  exit(1);
 	}
-      size_t newidx = c[0];
+
+      size_t newidxval = c[0];
+      vector<size_t> newidx(1, newidxval);
       vector<elemptr> newtrace = trace;
       elemptr tmpelem( m, newidx );
       newtrace.push_back( tmpelem );
 
-      return DOCMD( toexec, newtrace, cmds );
+      return DOCMD( toexec, newtrace, cmds, globals);
     }
 
   fprintf(stderr, "REV: error exec w corresp reached end somehow\n");

@@ -580,8 +580,6 @@
 
 
 
-//MAKETMPVAR( neurprobs, 
-
 
 
 //DOBLAH = EXP( EUCLIDDIST( presyn/x, presyn/y, presyn/z, postsyn/x, postsyn/y, postsyn/z ) * A )

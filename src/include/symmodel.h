@@ -33,7 +33,7 @@ struct elemptr;
 struct varptr;
 
 
-typedef std::function< real_t( const string&, const vector<elemptr>&, const cmdstore& ) > cmd_functtype;
+typedef std::function< real_t( const string&, const vector<elemptr>&, const cmdstore&, global_store& ) > cmd_functtype;
 
 
 vector<string> parse( const string& name);
@@ -52,7 +52,7 @@ struct varptr
 
 //REV: should globalstore just be a symmodel? Does it need special functions? For purposes of checking if it is in global store or not. Or if two are both in
 //global store together. For purpose of finding correspondences.
-struct globalstore
+struct global_store
 {
   vector< std::shared_ptr<symmodel> > models;
 
@@ -81,7 +81,7 @@ struct globalstore
     return loc;
   }
   
-  std::shared_ptr<symmodel> findmodel( const string& s )
+  elemptr findmodel( const string& s, const vector<size_t>& idx )
   {
     vector<size_t> found = modellocs( s );
     if( found > 1 )
@@ -89,15 +89,17 @@ struct globalstore
 	fprintf(stderr, "REV error in find model in GLOBAL STORE, found more than one examples of model [%s]\n", s.c_str() );
 	exit(1);
       }
-    
+
     std::shared_ptr<symmodel> foundguy;
+    elemptr res( foundguy, idx );
     //just get this model, right now ;) It will be a var in a model I assume.
     if( found.size() == 1)
       {
-	foundguy = models[ found[0] ];
+	//foundguy = models[ found[0] ];
+	res.model = models[ found[0] ];
       }
 
-    return foundguy; //may be null if not found ;)
+    return res;
   } //end findmodel
 
 
@@ -139,9 +141,11 @@ struct symvar
   }
   
   real_t getvalu( const size_t& idx );
+  real_t getvalus( const vector<size_t>& idx );
   
 
   void setvalu( const size_t& idx, const real_t& val );
+  void symvar::setvalus( const vector<size_t>& idx, const vector<real_t>& val )
  
   void reset()
   {
@@ -198,6 +202,11 @@ struct elemptr
 {
   std::shared_ptr<symmodel> model;
   vector<size_t> idx;
+
+  //model is null...
+  elemptr()
+  {
+  }
   
 elemptr( const std::shared_ptr<symmodel>& p, const size_t& i )
 : model( p ), idx( vector<size_t>(1,i) )
@@ -209,6 +218,7 @@ elemptr( const std::shared_ptr<symmodel>& p, const vector<size_t>& i )
   {
   }
 };
+
 
 struct corresp
 {
@@ -266,6 +276,25 @@ struct corresp
   //REV: user never does a raw GET, they only use GETVAR.
   //However, creating new vect is a pain in the ass, so just return IDX directly
   virtual vector<size_t> getall( const size_t& s ) = 0;
+
+  //E.g. problem is if I want to "get all all" of an index, we have an issue. For now, just handle it as a single example.
+  
+  //This calls derived getall for me
+  vector<size_t> getallall( const vector<size_t>& s )
+  {
+    vector<size_t> ret;
+    for(size_t a=0; a<s.size(); ++a)
+      {
+	size_t idx = s[a];
+	vector<size_t> toadd = getall(idx);
+	for(size_t t=0; t<toadd.size(); ++t)
+	  {
+	    ret.push_back( toadd[t] );
+	  }
+      }
+    return ret;
+  }
+  
   //virtual size_t get( const size_t& s, const size_t& offset ) = 0;
   virtual vector<real_t> getallvar( const size_t& s, const symvar& var ) = 0;
   //virtual real_t getvar( const size_t& s, const symvar& var, const size_t& offset ) = 0;
@@ -275,15 +304,6 @@ struct corresp
 //stringify macro
 #define STR( _mystring )  #_mystring
 
-
-struct subfunct_replacer
-{
-  vector<size_t> argrep;
-  vector<size_t> toreplace;
-
-  
-  
-};
 
 struct cmdstore
 {
@@ -454,6 +474,22 @@ elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace );
 elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace, string& varname );
 
 
+string get_containing_model_path( const string& parsearg, string& vartail )
+{
+  vector<string> parsed = parse(parsearg);
+  if( parsed.size() < 1 )
+    {
+      fprintf(stderr, "No var specified???\n");
+      exit(1);
+    }
+  else
+    {
+      vartail = parsed[ parsed.size() -1 ];
+      parsed.pop_back();
+      return CAT( parsed, "/" );
+    }
+}
+
 //#define FUNCDECL( fname )   real_t fname( const string& arg, std::shared_ptr<symmodel>& model, const cmdstore& cmds )
 
 //"easiest" way is to simply push-back on the end of the model trace. In that way, I will always use the last guy.
@@ -465,7 +501,7 @@ elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>
 //REV: yea, OK, easiest to just make the last one be the model/idx. Then when i call get_model_widx, I will use the end of that trace to do the calling I guess.
 //Or, I could use it as a sanity check. Like, the last guy on me, should always be myself and my index. Note that then I have no need to pass index...
 //Could just make global function, that wraps the calls.
-#define FUNCDECL( fname )   real_t fname( const string& arg, const vector<elemptr>& trace, const cmdstore& cmds )
+#define FUNCDECL( fname )   real_t fname( const string& arg, const vector<elemptr>& trace, const cmdstore& cmds, global_store& globals )
 
 FUNCDECL(DOCMD);
 FUNCDECL(READ);
@@ -478,8 +514,6 @@ FUNCDECL(NEGATE);
 FUNCDECL(EXP);
 FUNCDECL(GAUSSRAND);
 FUNCDECL(UNIFORMRAND);
-
-//IF type function?
 
 FUNCDECL(SUMFORALL);
 FUNCDECL(MULTFORALL);
@@ -657,7 +691,6 @@ struct symmodel
 
   size_t modelsize = 0; //All models have size? It is shared by all submodels and parent models.
 
-
   //REV: where are generators stored? I assume in this model?
   //Or are all generators stored in a single location?
   //But we won't use them again, we need to separate generation of size, generation of values, and
@@ -666,16 +699,7 @@ struct symmodel
   //If values() gen not specified, it is assumed that size solved that issue? I.e. co-generated?
   //But, then we can't re-draw.
   //If reset() not specified, uh, error!
-  void set_var_gen( const string& varname, const generator& g )
-  {
-    //Find var, do it.
-  }
-
-  void set_corr_gen( const string& varname, const generator& g )
-  {
-    
-  }
-
+  
   bool checkready()
   {
     bool ready=true;
@@ -888,6 +912,8 @@ struct symmodel
     //addtypes( t );
   }
 
+  
+  
   void set_updatefunct( const updatefunct_t& uf )
   {
     updatefunct = uf; //copy
@@ -1229,13 +1255,15 @@ struct symmodel
   //Once I get the symvar, I can use symvar->parent to get actual containing model ;) OK, great.
 
   
-  elemptr get_containing_model_widx( const string& unparsed, const size_t& idx, const vector<elemptr>& trace, string& varname )
+  //elemptr get_containing_model_widx( const string& unparsed, const size_t& idx, const vector<elemptr>& trace, string& varname )
+  elemptr get_containing_model_widx( const string& unparsed, const vector<size_t>& idx, const vector<elemptr>& trace, string& varname )
   {
     vector<string> parsed = parse( unparsed );
     return get_containing_model_widx( parsed, idx, trace, varname );
   }
   
-  elemptr get_containing_model_widx( const vector<string>& parsed, const size_t& idx, const vector<elemptr>& trace, string& varname )
+  //elemptr get_containing_model_widx( const vector<string>& parsed, const size_t& idx, const vector<elemptr>& trace, string& varname )
+  elemptr get_containing_model_widx( const vector<string>& parsed, const vector<size_t>& idx, const vector<elemptr>& trace, string& varname )
   {
     if(parsed.size() < 1)
       {
@@ -1251,7 +1279,8 @@ struct symmodel
     //Note, will looking for a var bubble back up? Only in var name? Or..?
   }
   
-  elemptr get_model_widx( const string& unparsed, const size_t& idx, const vector<elemptr>& trace )
+  //elemptr get_model_widx( const string& unparsed, const size_t& idx, const vector<elemptr>& trace )
+  elemptr get_model_widx( const string& unparsed, const vector<size_t>& idx, const vector<elemptr>& trace )
   {
     vector<string> parsed = parse( unparsed );
     return get_model_widx( parsed, idx, trace );
@@ -1259,31 +1288,13 @@ struct symmodel
   
 
 
-
-  //So, first, containing model was presyn-gAMPA. Fine.
-  //It says, oh shit, in me, there is a hole!
-  //The hole is presyn-gAMPA! So, I go through the hole!
-
-
-  //Walk through it.
-  //update ADEX/gAMPA1.
-  //I need to iter through presyn
-  //So, I go into syn2-1/
-  //In syn2-1, i get e.g. syn2-1/Glu_syn/hitweight. That is fine.
-  //The issue comes when I then try to access (from inside syn2-1), gAMPA1 value.
-  //Specifically I try to access postsyn-gAMPA/affinity.
-  //Of course, in there..it can never find it? Fuck, infinite loop?
-  //Set a breadcrumb for sanity to check state loops...
-  
-  //I am searching for the solution to MODEL1/HOLE1/HOLE2/MODEL3, etc., given start idx (beginning of trace)
-  elemptr get_model_widx( const vector<string>& parsed, const size_t& idx, const vector<elemptr>& trace )
+  elemptr get_model_widx( const vector<string>& parsed, const vector<size_t>& idx, const vector<elemptr>& trace )
   {
-    //same as get_model, but I always keep index around at each point, and when I return, I return a model and an index
-
-    
     //I start with it already parsed.
     //If parsed.size() == 0, I simply return this (with an index?)
-    if( parsed.size() == 0)
+    //The empty string indicates "this" model? No, when I parse it, I need to sep it, so an empty, will return in a zero-parse, of size zero, or nothing?
+    //Either way, would result in same, so return ;)
+    if( parsed.size() == 0 || parsed[0].compare("") == 0 )
       {
 	fprintf(stdout, "FOUND MODEL! [%s]\n", buildpath().c_str() );
 	elemptr t = elemptr( shared_from_this(), idx );
@@ -1321,7 +1332,8 @@ struct symmodel
 	//However
 	//Problem is if I go through a hole, and the hole is the same model, that is the main problem
 	vector<elemptr> newtrace = trace;
-	size_t idx_in_submodel = idx; //no change, b/c submodel.
+	//size_t idx_in_submodel = idx; //no change, b/c submodel.
+	vector<size_t> idx_in_submodel = idx; //no change, b/c submodel.
 	//newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	
 	return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
@@ -1349,7 +1361,8 @@ struct symmodel
 	  {
 	    //Dont add to trace because its same model so infinite loop with going to parent.x
 	    vector<elemptr> newtrace = trace;
-	    size_t idx_in_submodel = idx; //no change, b/c submodel.
+	    //size_t idx_in_submodel = idx; //no change, b/c submodel.
+	    vector<size_t> idx_in_submodel = idx; //no change, b/c submodel.
 	    //newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	    
 	    return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
@@ -1368,17 +1381,24 @@ struct symmodel
 	    
 	    
 	    //REV; SANITY, if corresp not allocated yet, just return 0.
-	    size_t idx_in_submodel = 0;
+	    //size_t idx_in_submodel = 0;
+	    vector<size_t> idx_in_submodel(1,0);
+	    
 	    //REV; Don't check this here, check this in the corresp struct? I.e. return dummy data if it is not existing yet (or exit?)
 	    if(mycorresp->initialized())
 	      {
+		//REV: TODO HERE, just return it directly, with new IDX_IN_SUBMODEL ;0
+		//REV: this is it!!! This is where I 
 		vector<size_t> sanity = mycorresp->getall( idx );
-		if( sanity.size() != 1 )
+		/*if( sanity.size() != 1 )
 		  {
 		    fprintf(stderr, "SANITY check for corresp during access failed! Expected corresp for idx [%lu] of model [%s] to have only 1 corresponding element in model [%s], but it had [%lu]\n", idx, buildpath().c_str(), nextmodel->buildpath().c_str(), sanity.size() );
 		    exit(1);
 		  }
 		size_t idx_in_submodel = sanity[0]; //no change, b/c submodel.
+		*/
+
+		idx_in_submodel = sanity;
 	      }
 
 	    vector<elemptr> newtrace = trace;
@@ -1396,19 +1416,17 @@ struct symmodel
 	    std::shared_ptr<symmodel> nextmodel = parent;
 	    
 	    vector<elemptr> newtrace = trace;
-	    size_t idx_in_submodel = idx; //no change, b/c submodel.
+	    //size_t idx_in_submodel = idx; //no change, b/c submodel.
+	    vector<size_t> idx_in_submodel = idx; //no change, b/c submodel.
 	    //newtrace.push_back( elemptr( shared_from_this(), idx ) );
 	    
 	    return nextmodel->get_model_widx( parsed, idx_in_submodel, newtrace );
 	  }
 	else if(  parent && !(parent->parent) )
 	  {
-	    //ONLY if size of trace is zero do we exit?
-	    if( trace.size() == 0 )
-	      {
-		fprintf(stderr, "REV: Error, could not find in get_model_widx, even by bubbling up parents, or by jumping back model trace\n");
-		exit(1);
-	      }
+	    //Couldn't find it! Return empty elemptr...bad.
+	    elemptr ep;
+	    return ep;
 	  }
 	else
 	  {
@@ -1436,7 +1454,8 @@ struct symmodel
     
     //Move back model and try again?
     vector<elemptr> newtrace = trace;
-    size_t idx_in_submodel = newtrace[ newtrace.size() - 1].idx; //end of trace.
+    //size_t idx_in_submodel = newtrace[ newtrace.size() - 1].idx; //end of trace.
+    vector<size_t> idx_in_submodel = newtrace[ newtrace.size() - 1].idx; //end of trace.
     std::shared_ptr<symmodel> nextmodel = newtrace[ newtrace.size() - 1].model;
     newtrace.pop_back();
 
@@ -1534,6 +1553,20 @@ struct symmodel
     return true;
   }
 
+  std::shared_ptr<symmodel> get_root()
+    {
+      std::shared_ptr<symmodel> top = get_toplevel_model();
+      if( top->parent )
+	{
+	  return top->parent;
+	}
+      else
+	{
+	  fprintf(stderr, "REV: something is fucked, top level is not top level, in get root\n");
+	  exit(1);
+	}
+    }
+  
   size_t get_modelsize()
   {
     auto toplevel = get_toplevel_model();
@@ -1562,7 +1595,8 @@ struct symmodel
   
   
   //REV: meh these should be shared ptrs too?
-  std::shared_ptr<symvar> getvar_widx( const string& s, const size_t& idx, const vector<elemptr>& trace )
+  //std::shared_ptr<symvar> getvar_widx( const string& s, const size_t& idx, const vector<elemptr>& trace )
+  std::shared_ptr<symvar> getvar_widx( const string& s, const vector<size_t>& idx, const vector<elemptr>& trace )
   {
     //std::vector<string> parsed = parse( s );
     string varname;
@@ -1592,14 +1626,16 @@ struct symmodel
     return containingmodel.model->vars[ loc[0] ];
   }
 
-  std::shared_ptr<symvar> readvar_widx( const string& s, const size_t& idx, const vector<elemptr>& trace )
+  //std::shared_ptr<symvar> readvar_widx( const string& s, const size_t& idx, const vector<elemptr>& trace )
+  std::shared_ptr<symvar> readvar_widx( const string& s, const vector<size_t>& idx, const vector<elemptr>& trace )
   {
     std::shared_ptr<symvar> tmp = getvar_widx(s, idx, trace);
     tmp->readvar();
     return tmp;
   }
 
-  void setvar_widx( const string& s, const real_t& v, const size_t& idx, const vector<elemptr>& trace )
+  //void setvar_widx( const string& s, const real_t& v, const size_t& idx, const vector<elemptr>& trace )
+  void setvar_widx( const string& s, const real_t& v, const vector<size_t>& idx, const vector<elemptr>& trace )
   {
     getvar_widx( s, idx, trace )->writevar();
     return;
