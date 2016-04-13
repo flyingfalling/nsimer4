@@ -8,84 +8,62 @@
 #pragma once
 
 #include <symmodel.h>
+#include <cmdstore.h>
 
 struct generator;
-
+struct symmodel;
+struct global_store;
 
 struct genfunct_t
 {
   vector<string> lines;
-  //gencmdstore cmds;
   cmdstore cmds;
+  //std::shared_ptr<generator> gen;
   
-  std::shared_ptr<generator> gen;
-
-  void addlocalfunct(const string& fname, const string& f )
+  void addlocal(const string& fname, const string& f )
   {
     cmds.addlocal( fname, f );
   }
 
-  void execute( const size_t& myidx )
-  {
-    for(size_t l=0; l<lines.size(); ++l)
-      {
-	vector<elemptr> trace;
-	elemptr tmp( gen->model, myidx );
-	trace.push_back(tmp);
-	DOCMD( lines[l], trace, cmds );
-      }
-  }
-
+  void execute( std::shared_ptr<symmodel>& model, global_store& globals );
+  
   void add( const string& s )
   {
     lines.push_back( s );
   }
 
-genfunct_t() // const std::shared_ptr<generator>& g )
-//: gen(g )
+  void enumerate()
+  {
+    for(size_t x=0; x<lines.size(); ++x)
+      {
+	fprintf(stdout, "[%s]\n", lines[x].c_str());
+      }
+  }
+  
+  genfunct_t()
   {
   }
 }; //end struct genfunct_t
 
 
+
 struct generator
-  :
-  public std::enable_shared_from_this<generator>
-
 {
-  //Takes source model (variable?) I guess.
-  void generate()
+  genfunct_t genfunct;  
+  //std::shared_ptr<symmodel> model;
+  
+  
+  void generate( std::shared_ptr<symmodel>& model, global_store& globals );
+
+  void enumerate()
   {
-    //genfunct has access to THIS (i.e. this generator). So it can access: model, and varstogen. Good.
-    //RULES: I can only add new var at the base level.
-    //They will have side effects...
-    genfunct.execute();
+    genfunct.enumerate();
   }
-
-  //either has a pointer to a corresp, or a model?
-
-  genfunct_t genfunct; //parent model is what? the model that it generates? heh.
   
-  std::shared_ptr<symmodel> model;
   
-  //vector<string> varstogen;
-
-  void add_to_genfunct( const string& s )
+  void add( const string& s )
   {
-    if( !genfunct.gen )
-      {
-	genfunct.gen = shared_from_this();
-      }
-
     genfunct.add( s );
-  }
-  
-  //List of variables that will be simultaneously generated.
-  //I can find them in model...note some may be connections.
-  //generator( const vector<string>& genlist, const std::shared_ptr<symmodel>& m )
- generator()// const std::shared_ptr<symmodel>& m )
-    // : model( m )
-  {
   }
   
 };

@@ -5,14 +5,30 @@
 //TODO: add way to specify things to do at end/beginning of turn (for example, setting V[t-1] to V[t].)
 //TODO: add way to automatically determine dependencies among variables for update purposes (based on read/write during each update line of each model).
 //TODO: make options so that I can do "even" updates i.e. spike schedulers.
-//TODO: add random variable functions to functs.
+
+
+//REV: where is the global store at? It is referenced by both generators and normal models. Does each model have its own (for temp vars), which are only
+//referenced by those models? In which case, we have a problem because models might create a tmp var in a parent var, then go through a hole to a child var for
+//part of the update funct. In which case, it would not find the final one. Yea, so each model has a single global store at its toplevel node, which is what it
+//searches. Hm, that might not work, it would mean I would need to look through base global stores of every model to find the value? Ugh...
+//Can I make an "equally sized" local variable? It will literally compile to a tmp... I need to know size? So it can be referenced by each? It is local to
+//each individual thread? Seems much nicer...
+//The global store really represents temp variables? Sure it's just a way to find them? During update time it literally compiles to something?
+
+//Ah, best idea is that it is local to that UPDATE FUNCT. Problem is that, in that case, it can't hold "global global" variables such as A, dt, etc.
+//Those are all copied at the beginning of each update function though, I guess. Yea, I like the idea of it being created locally for each update funct.
+//So, there is a basic global_state, which is copied and destroyed by each update funct etc. as it goes...because we wouldn't reference local vars
+//between update functions, would we? We could share the same global state for all GEN though? Nah...
+//So, global_state is 
 
 #pragma once
 
 #include <commontypes.h>
 #include <fparser.h>
 #include <parsehelpers.h>
-//#include <generator.h>
+#include <generator.h>
+
+#include <cmdstore.h>
 
 #include <sys/types.h>
 #include <vector>
@@ -33,7 +49,7 @@ struct symmodel;
 struct cmdstore;
 struct elemptr;
 struct varptr;
-//struct generator;
+struct generator;
 
 
 
@@ -43,9 +59,8 @@ vector<string> parse( const string& name);
 vector<string> parsetypes( const string& name);
 
 
-//Return a raw vect of these?
-//Need to be careful in GPU memory, won't pass global memory around. It would need to globally allocated to stack and
-//referenced some how, for each implementation...? At "spread" time. Fuck.
+
+
 struct varptr
 {
   vector<real_t> valu;
@@ -53,17 +68,21 @@ struct varptr
 };
 
 
+
 //REV: should globalstore just be a symmodel? Does it need special functions? For purposes of checking if it is in global store or not. Or if two are both in
 //global store together. For purpose of finding correspondences.
 struct global_store
 {
   vector< std::shared_ptr<symmodel> > models;
-
+  
+  void addiparam( const string& lname, const size_t& val );
+  void addfparam( const string& lname, const real_t& val );
+  
   void add( std::shared_ptr<symmodel>& m )
   {
     models.push_back( m );
   }
-
+  
   void addempty( const string& localname );
   
   //find model type thing. Only first level ;)
@@ -79,7 +98,7 @@ struct global_store
 }; //end GLOBAL STORE
 
 
-typedef std::function< varptr( const string&, const vector<elemptr>&, cmdstore&, global_store& ) > cmd_functtype;
+
 
 struct symvar
 {
@@ -105,11 +124,26 @@ struct symvar
 
   bool init=false;
 
-  bool isconst=false;
+  //bool isconst=false;
+
+  bool isconst()
+  {
+    //only if size is 1????
+    if( ivalu.size() == 1 || valu.size() == 1 )
+      {
+	return true;
+      }
+    return false;
+  }
   
   bool isinit()
   {
     return init;
+  }
+
+  void setinit()
+  {
+    init = true;
   }
   
   real_t getvalu( const size_t& idx );
@@ -126,7 +160,14 @@ struct symvar
   void setivalus( const vector<size_t>& idx, const vector<size_t>& val );
 
   void addvalus( const varptr& vp );
- 
+
+
+  //REV: I *must* set the modelsize of root of this guy to be at least equal to me?
+  //And set me to init?
+  void addivalu( const size_t& i);
+    
+  void addfvalu( const real_t& f);
+    
   void reset()
   {
     read=0;
@@ -142,12 +183,7 @@ struct symvar
   {
     ++written;
   }
-
-  void setisconst()
-  {
-    isconst=true;
-  }
-
+  
   
   
   //Default is "my location"
@@ -206,6 +242,8 @@ elemptr( const std::shared_ptr<symmodel>& p, const vector<size_t>& i )
   }
 };
 
+
+elemptr findmodel( const string& s, const vector<elemptr>& trace, global_store& globals );
 
 struct corresp
 {
@@ -304,172 +342,6 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
 #define STR( _mystring )  #_mystring
 
 
-struct cmdstore
-{
-  vector< string > functnames;
-  vector< cmd_functtype > functs;
-  
-  std::default_random_engine RANDGEN;
-
-  vector<string> localfnames;
-  vector<string> localfs;
-
-  vector<size_t> findlocal( const string& fname ) const
-  {
-    vector<size_t> r;
-    for(size_t x=0; x<localfnames.size(); ++x)
-      {
-	if( localfnames[x].compare( fname )  == 0 )
-	  {
-	    r.push_back( x );
-	  }
-      }
-    return r;
-  }
-  
-  //bool handlelocal( const string& input, string& output ) //const string& fname, const vector<string>& args )
-  string handlelocal( const string& input ) const //const string& fname, const vector<string>& args )
-  {
-    vector<string> parsed = fparse( input );
-    if( parsed.size() < 2 )
-      {
-	//fprintf(stderr, "REV; not a function with args ([%s])?\n", input.c_str());
-	//exit(1);
-	return input;
-      }
-
-    string fname = parsed[0];
-    vector<string> args( parsed.begin()+1, parsed.end() );
-    
-    vector<size_t> locs = findlocal( fname );
-    if( locs.size() == 1 )
-      {
-	//output = replace( localfs[ locs[0] ], args );
-	return replace( localfs[ locs[0] ], args );
-      }
-    else if( locs.size() > 1 )
-      {
-	fprintf(stderr, "REV: error handle local, more than one funct registered under name [%s]\n", fname.c_str() );
-	exit(1);
-      }
-    else
-      {
-	return input;
-      }
-  }
-  
-  string replace( const string& s, const vector<string>& arglist ) const
-  {
-    //Doparse should be 1!!!!
-    vector<string> parsed = fparse( s );
-    
-    if( parsed.size() == 1 )
-      {
-	for(size_t x=0; x<arglist.size(); ++x)
-	  {
-	    //Fuck, this is a "converter!!!! 
-	    string name="arg" + std::to_string( x );
-	    if( parsed[0].compare(name) == 0 )
-	      {
-		//parsed[0] = arglist[x];
-		return arglist[x];
-	      }
-	    else
-	      {
-		//return parsed[0];
-	      }
-	  }
-      }
-    else
-      {
-	vector<string> argpart( parsed.begin()+1, parsed.end() );
-	for( size_t p=0; p<argpart.size(); ++p)
-	  {
-	    argpart[p] = replace( argpart[p], arglist );
-	  }
-	string fpart =  parsed[0] ;
-
-	string argpartstr = CAT( argpart, "," );
-	string newf = fpart + "(" + argpartstr + ")";
-	return newf;
-      }
-  }
-  
-    
-  void addlocal( const string& fname, const string& f )
-  {
-    //Check no name clash etc.
-    localfnames.push_back(fname);
-    localfs.push_back(f);
-  }
-  
-  cmdstore();
-
-  void add( const string& s, cmd_functtype& f )
-  {
-    functnames.push_back(s);
-    functs.push_back(f);
-  }
-  
-
-  //REV: if it doesnt find it, it is a variable or a number
-  bool findfunct( const string& s, cmd_functtype& f ) const
-  {
-    //const vector<string>::iterator it = std::find( functnames.begin(), functnames.end(), s );
-    for(size_t x=0; x<functnames.size(); ++x)
-      {
-	if( functnames[x].compare( s ) == 0 )
-	  {
-	    f = functs[ x ];
-	    return true;
-	  }
-      }
-    return false;
-  }
-
-
-  //Parses just by commas, but leaves matching parens (i.e. functions) intact.
-  //This is just a literal parse of inside of funct? Is there any point in this? Just use the remnants from fparse...
-  vector<string> doparse( const string& s ) const 
-  {
-    //JUST RUN MY PARSER HERE, only first level parse.
-    auto f( std::begin( s ));
-    auto l( std::end( s ));
-    const static fparser::doparser<decltype(f)> p;
-    vector<string> result;
-    bool ok = fparser::qi::phrase_parse(f, l, p, fparser::qi::space, result );
-    
-    if(!ok)
-      {
-	fprintf(stderr, "REV: fparse: invalid input!!! [%s]\n", s.c_str());
-	exit(1);
-      }
-    
-    return result;
-    
-  }
-  
-  //parses function, i.e. expects only single FNAME( COMMA, ARGS )
-  vector<string> fparse( const string& s ) const
-  {
-    //JUST RUN MY PARSER HERE, only first level parse.
-    auto f( std::begin( s ));
-    auto l( std::end( s ));
-    const static fparser::parser<decltype(f)> p;
-    vector<string> result;
-    bool ok = fparser::qi::phrase_parse(f, l, p, fparser::qi::space, result );
-    
-    if(!ok)
-      {
-	fprintf(stderr, "REV: fparse: invalid input!!! [%s]\n", s.c_str());
-	exit(1);
-      }
-    
-    return result;
-    
-  }
-    
-};
 
 vector<real_t> vect_mult( const vector< vector<real_t> >& v );
 
@@ -510,6 +382,18 @@ elemptr get_curr_model( const vector<elemptr>& trace );
 bool check_cmd_is_multi( const string& s );
 
 varptr exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, cmdstore& cmds , global_store& globals);
+
+
+
+//REV: trace will contain the most recent index? I guess? Why use trace????
+//REV: trae contains last idx?
+varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace, global_store& globals );
+
+void set_proper_var_widx(const string& varname, const vector<elemptr>& trace, global_store& globals, const varptr& vp );
+
+void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, global_store& globals, const varptr& vp, const vector<size_t>& topushascorr );		   
+
+
 
 
 elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace );
@@ -562,9 +446,8 @@ struct updatefunct_t
   vector<string> lines;
   cmdstore cmds;
   std::shared_ptr<symmodel> model;
-
-  global_store globals;
-
+  
+  
   updatefunct_t( const std::shared_ptr<symmodel>& m )
   : model( m )
   {
@@ -580,7 +463,10 @@ struct updatefunct_t
     lines.push_back( s );
   }
 
-  void execute( const size_t& myidx )
+  //REV: where do globals come from? I assume they are part of like, a "simulation". So...just at the root level model I guess? Does each model have its own globals?
+  //Globals are like...tmp variables?
+  //Can be set/found automatically for each update? I guess...
+  void execute( const size_t& myidx, global_store& globals )
   {
     for(size_t c=0; c<lines.size(); ++c)
       {
@@ -598,7 +484,6 @@ struct updatefunct_t
 
 //REV: what to do when I make a circuit a submodel of another? Is it possible?
 //I guess. So, I guess all guys only go up until there is some "top model" type guy, which is different type or has a flag set.
-
 
 
 
@@ -785,6 +670,20 @@ struct symmodel
 
   size_t modelsize = 0; //All models have size? It is shared by all submodels and parent models.
 
+  std::shared_ptr<generator> gen;
+
+  global_store globalparams; //should never be accessed for model, should only be convenience at highest level circuit. Shoudl really make derivative with thisl...
+
+  global_store getglobals()
+  { return globalparams; }
+
+  void addfparam( const string& lname, const real_t& val )
+  { globalparams.addfparam( lname, val ); }
+
+  void addiparam( const string& lname, const real_t& val )
+  { globalparams.addfparam( lname, val ); }
+  
+  
   //REV: where are generators stored? I assume in this model?
   //Or are all generators stored in a single location?
   //But we won't use them again, we need to separate generation of size, generation of values, and
@@ -793,6 +692,22 @@ struct symmodel
   //If values() gen not specified, it is assumed that size solved that issue? I.e. co-generated?
   //But, then we can't re-draw.
   //If reset() not specified, uh, error!
+
+  void setgenformodel( const string& modelname, const generator& g );
+  
+  //REV: crap, this will need to be done on the GPU too at generation time fuck -_-;
+  
+  void notify_size_change( const size_t& i )
+  {
+    //some variable was pushed to...so size must have changed. Must update my size...
+    auto top = get_toplevel_model();
+    size_t currsize = top->modelsize;
+    if( currsize < i )
+      {
+	top->modelsize = i;
+      }
+  }
+  
   
   bool checkready()
   {
@@ -926,7 +841,7 @@ struct symmodel
   
   std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symvar>& s )
   {
-    if( s->isconst )
+    if( s->isconst() )
       {
 	//Doesn't matter, just return a const guy or smthing.
 	return std::make_shared<const_corresp>( s->parent, shared_from_this() );
@@ -1103,6 +1018,19 @@ struct symmodel
   void addvar( const string& s, const string& t )
   {
     vars.push_back( std::make_shared<symvar>(s, t, shared_from_this() ) ); //std::shared_ptr<symmodel>(this)) );
+  }
+
+
+  void addfvar( const string& s, const string& t, const real_t& f )
+  {
+    addvar( s, t );
+    vars[ vars.size() - 1 ]->addfvalu( f );
+  }
+
+  void addivar( const string& s, const string& t, const size_t& i )
+  {
+    addvar( s, t );
+    vars[ vars.size() - 1 ]->addivalu( i );
   }
 
   void addhole( const string& s )
@@ -1748,17 +1676,19 @@ struct symmodel
     return toplevel->modelsize;
   }
   
-  void update()
+  void update( global_store& globals )
   {
+    global_store localglobals = globals;
+    
     //For all members, execute? And for all submodels
     for( size_t x=0; x<get_modelsize(); ++x)
       {
-	updatefunct.execute(x);
+	updatefunct.execute(x, localglobals);
       }
     
     for(size_t subm=0; subm<models.size(); ++subm )
       {
-	models[subm]->update();
+	models[subm]->update( localglobals );
       }
 
     //Note this is not updating a single "x" at a time?
@@ -1826,11 +1756,11 @@ struct symmodel
 
   //Checks all variables referenced in update function, and ensures they exist (and gives location they exist at)
   //ONLY UPDATES MINE, DOES NOT RECURSE.
-  void check_update_funct()
+  void check_update_funct( global_store& globals)
   {
     //literally runs it and tries to read each variable ;)
     //If it can't find it, it exits...
-    updatefunct.execute( 0 );
+    updatefunct.execute( 0, globals );
   }
 
   string buildpath( )
@@ -1893,10 +1823,12 @@ struct symmodel
       }
 
     prefixprint(depth);
+
+    global_store tmpglobals;
     if( checkupdate )
       {
 	fprintf(stdout, "++checking update function for variable reference resolution\n");
-	check_update_funct(); //does for "this" model..
+	check_update_funct(tmpglobals); //does for "this" model..
       }
     else
       {

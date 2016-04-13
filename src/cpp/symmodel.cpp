@@ -1511,7 +1511,7 @@ real_t symvar::getvalu( const size_t& _idx )
       return 0;
     }
 
-  if( isconst )
+  if( isconst() )
     {
       return valu[0];
     }
@@ -1593,7 +1593,7 @@ size_t symvar::getivalu( const size_t& _idx )
       return 0;
     }
 
-  if( isconst )
+   if( isconst() )
     {
       return ivalu[0];
     }
@@ -1633,7 +1633,7 @@ void symvar::setivalu( const size_t& _idx, const size_t& val )
       //return;
       return;
     }
-  else if( isconst )
+  else if( isconst() )
     {
       if( _idx != 0 )
 	{
@@ -1688,7 +1688,7 @@ void symvar::setvalu( const size_t& _idx, const real_t& val )
       //do nothing
       //return;
     }
-  else if( isconst )
+  else if( isconst() )
     {
       if( _idx != 0 )
 	{
@@ -2269,6 +2269,8 @@ void symvar::addvalus( const varptr& vp )
     {
       valu.insert( valu.end(), vp.valu.begin(), vp.valu.end() );
     }
+  
+  setinit();
 }
 
 
@@ -2283,4 +2285,40 @@ void corresp::fill( const vector<size_t>& arg )
     //This will mark init, and also fill the other side ;)
     parent->notify_filled_corresp( targmodel );
     return;
+  }
+
+
+void global_store::addiparam( const string& lname, const size_t& val )
+  {
+    //auto m = symmodel::Create( "", "", lname );
+    addempty( lname );
+    models[ models.size() - 1 ]->addivar( "", "", val );
+  }
+
+void global_store::addfparam( const string& lname, const real_t& val )
+  {
+    addempty( lname );
+    models[ models.size() - 1 ]->addfvar( "", "", val );
+  }
+  
+void symvar::addivalu( const size_t& i)
+{
+  ivalu.push_back( i );
+  parent->notify_size_change( ivalu.size() );
+}
+  
+void symvar::addfvalu( const real_t& f)
+{
+  valu.push_back( f );
+    parent->notify_size_change( valu.size() );
+    
+}
+
+void symmodel::setgenformodel( const string& modelname, const generator& g )
+  {
+    //copy generator?
+    auto mod = get_model( modelname );
+    mod->gen = std::make_shared<generator>(g);
+    fprintf(stdout, "Generator set for model [%s]\n", modelname.c_str() );
+    mod->gen->enumerate();
   }
