@@ -95,6 +95,40 @@ bool checknumeric( const string& s, real_t& ret )
   return ok;
 }
 
+//REV: should only read until SPACE (i.e. 10382.283 should be FAIL, not 10382...)
+bool checknumericint( const string& s, size_t& ret )
+{
+  bool ok=false;
+  std::istringstream iss( s );
+  
+  iss >> ret;
+  
+  //check that iss is all done! If it successfully parsed it, we good?
+  if( iss.fail() )
+    {
+      iss.clear();
+      string failedstring;
+      iss >> failedstring;
+      
+      ok = false;
+    }
+  else
+    {
+      ok = true;
+    }
+  
+  //Do I need to try to read "next" to read end of string? Will it return fail????
+  string wat;
+  iss >> wat;
+  if( !iss.eof() )
+    {
+      fprintf(stderr, "REV: error, checknumeric, didn't finish parse of input string to numeric INT [%s], read in unexpected [%s]?!?!?!?!\n", s.c_str(), wat.c_str());
+      exit(1);
+    }
+
+  return ok;
+}
+
 string CAT( const vector<string>& args, const string& sep  )
 {
   if(args.size() == 0)

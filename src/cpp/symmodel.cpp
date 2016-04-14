@@ -661,7 +661,11 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	  realvar->addvalus( vp );
 
 	  //Need to set corresp to that which was passed to me.
-	  corr->fill( topushascorr );
+	  //Only do if size > 0 (i.e. there was a corr passed, shoudl even be 1 if it was just binding to a singel value?)
+	  if( topushascorr.size() > 0 )
+	    {
+	      corr->fill( topushascorr );
+	    }
 	  
 	  return;
 	}
@@ -1257,124 +1261,258 @@ FUNCDECL( NEWLOCAL )
   return emptyv;
 }
 
-FUNCDECL( PUSHFORALL )
-{
-  //Ret doesn't matter, but will coalesce returned guys into single array and push to target specified var.
 
-  //Basically, I do a "FORALL", but the results I get back, I push :)
-  //Are FORALL coalesced anyway?
+//If this is a single one, do I specify the "current" model and its index?
+//If so, it will add the correspondence one-by-one.
+//I might actually want to do that (in the future).
+//Note, in this case targmodel is "", i.e. the current model?
+//
+FUNCDECL( PUSH )
+{
   
   vector<string> parsed = cmds.doparse( arg );
-  if( parsed.size() != 3 )
+  if( parsed.size() < 2 )
     {
-      fprintf(stderr, "PUSHFORALL [%s], not 3 args \n", arg.c_str());
+      fprintf(stderr, "PUSH [%s], not 2 args \n", arg.c_str());
       exit(1);
     }
 
-  string targmodel = parsed[0];
-  string pushto = parsed[1];
-  string toexec = parsed[2];
-  fprintf(stdout, "Will FORALL execute [%s] for every member of [%s] (seen from model [%s]), PUSHING TO [%s]\n", toexec.c_str(), targmodel.c_str(), get_curr_model(trace).model->buildpath().c_str(), pushto.c_str());
+  string targmodel, pushto, toexec;
+  
+  targmodel = "";
+  pushto = parsed[0]; //this is var name.
+  toexec = parsed[1];
+  
+  
+  //fprintf(stdout, "Will FORALL execute [%s] for every member of [%s] (seen from model [%s]), PUSHING TO [%s]\n", toexec.c_str(), targmodel.c_str(), get_curr_model(trace).model->buildpath().c_str(), pushto.c_str());
+
 
   //Get model refererenced from here... must be initialized/size. OK. Can it be a var?
   //Note the model must be found inside trace? Yea...
-  auto ep = findmodel( targmodel, trace, globals);
-  auto pushep = findmodel( pushto, trace, globals);
+  //auto ep = findmodel( targmodel, trace, globals);
+
+  //REV: this must be a variable? However, it might be a model in GLOBALS. Findmodel will handle finding model QUA varname in globals.
+  //That is a hack. I should make globals straight vars, and thus make corresp be held inside vars....?
+  //Or, force it find "naked" variables in globals. I guess that makes sense...
+  auto pushep = findmodel( pushto, trace, globals); 
   
-  if( !ep.model )
-    {
-      fprintf(stderr, "Couldnt find EP model in PUSHFORALL\n");
-      exit(1);
-    }
   if( !pushep.model )
     {
       fprintf(stderr, "Couldnt find push EP model in PUSHFORALL\n");
       exit(1);
     }
+  
+  //vector<elemptr> newtrace = trace;
+  //ep.idx = vector<size_t>(1,0);
+  //newtrace.push_back( ep );
 
-  //REV: this automatically will execute for every one, getting it back, and
-  //appending...
-  size_t modelsize = ep.model->get_modelsize();
-  if(modelsize == 0 )
+
+  //New trace is the "inside" model. But, e.g., If I am adding 
+  //newtrace[ newtrace.size() -1].idx[ 0 ] = 0;
+  //Is...is this right? If I execute something, it will try to access a bunch of variables corresponding. But...who cares?
+  //I am just trying to push back a single value I assume.
+  //The value should be numeric...?
+  //Or combinations of numeric data with "set" values?
+  //Do I want user to be able to "PUSH" at non-outside locations? Ooooh that might actually work rofl.
+  //I.e. push inside a "forall". Interesting.
+  auto curr = get_curr_model( trace );
+  if( curr.idx.size() != 1 && curr.idx[0] != 0 )
     {
-      //Fuck...
-      fprintf(stderr, "ERROR, model size is zero!\n");
+      fprintf(stderr, "REV: major error in PUSH, the PARENT trace has idx size != 1 or it is not index 0...\n");
       exit(1);
     }
+  
+  varptr vp = DOCMD( toexec, trace, cmds, globals );
+  //fullvp.valu.insert( fullvp.valu.end(), vp.valu.begin(), vp.valu.end() );
+  //fullvp.idx.insert( fullvp.idx.end(), vp.idx.begin(), vp.idx.end() );
 
-  //vector<size_t> idxs( modelsize );
-  //std::iota(std::begin(idxs), std::end(idxs), 0);
-  //std::generate( idxs.begin(), idxs.end(), UniqueNumber );
-  
-  //ep.idx = idxs;
-  
-  //IDX overwrites it, I use IDX directly ;)
-  vector<elemptr> newtrace = trace;
-  ep.idx = vector<size_t>(1,0);
-  newtrace.push_back( ep );
-  //elemptr.idx = vector<size_t>(1, x); //1 through N? Does it make more sense to
-  //do one at a time and append them, or to do them all together here?
-  //What if each model is doing some sneaky shit like um, nested forall? That's fine.
-  //In that case, our IDX would be multi as well. I wouldn't know which is "pre",
-  //so lol. Inside of me, ref to PRE would look up old idx values through TRACE
-  //What would happen if IDX at that time point is like idx[1][2][3][4] etc.?
-  //And now it is like a gazillion. So which go with which? Each IDX generated some
-  //guys... I kind of like this way better...but...let's go with all together.
-  
-  //Assuming no mumbo fuck-ups this will work.
-  //varptr vp = DOCMD( toexec, trace, cmds, globals );
-
-  varptr fullvp;
+  //REV: shouldn't be "x", it should be whatever the idx is that i pushed to.
+  //Fuck.... same for when I push multiple guys...???
+  //E.g. if now I pushed #3 of last guy...
 
   vector<size_t> corr;
+  push_proper_var_widx( pushto, trace, globals, vp, corr );
   
-  for(size_t x=0; x<modelsize; ++x)
+  return vp;
+} //end PUSH
+
+FUNCDECL( PUSHFORALL )
+{
+  vector<string> parsed = cmds.doparse( arg );
+  //Basically, I do a "FORALL", but the results I get back, I push :)
+  //Are FORALL coalesced anyway?
+   if( parsed.size() < 2 || parsed.size() > 3 )
     {
-      newtrace[ newtrace.size() -1].idx[ 0 ] = x;
-      varptr vp = DOCMD( toexec, trace, cmds, globals );
-      fullvp.valu.insert( fullvp.valu.end(), vp.valu.begin(), vp.valu.end() );
-      fullvp.idx.insert( fullvp.idx.end(), vp.idx.begin(), vp.idx.end() );
-      //REV: FUCK FUCK FUCK, do I need to insert idxs as corresp?
-
-      
-      //I either got SIZE_T or VAL_T.
-      if( vp.idx.size() > vp.valu.size() )
-	{
-	  size_t nret = vp.idx.size();
-	  vector<size_t> toaddcorr( nret, x );
-	  corr.insert( corr.end(), toaddcorr.begin(), toaddcorr.end() );
-	  //idxs
-	}
-      else
-	{
-	  size_t nret = vp.valu.size();
-	  vector<size_t> toaddcorr( nret, x );
-	  corr.insert( corr.end(), toaddcorr.begin(), toaddcorr.end() );
-	  //valus
-	}
-
-      //Fine, problem is, what to add for the POSTSYN corresps?
-      //In other words, for each one generated, it must know what that number was
-      //I need to generate for THAT as well? Fuck... That's fine though.
+      fprintf(stderr, "PUSHFORALL [%s], not 2 or 3 args \n", arg.c_str());
+      exit(1);
+    }
+  string targmodel, pushto, toexec;
+  
+  if( parsed.size() == 2 )
+    {
+      targmodel = "";
+      pushto = parsed[0];
+      toexec = parsed[1];
+    }
+  else
+    {
+      targmodel = parsed[0];
+      pushto = parsed[1];
+      toexec = parsed[2];
     }
 
-  //REV: HERE HERE HERE. Note, I need to fucking PUSH to proper var, not just
-  //SET IT!@!!
-  //Gotta know which corr to set too!
+  //Ghetto hack, check isnumeric lol
+  size_t reptimes;
+  bool isint = checknumericint( targmodel, reptimes );
+
+  if( !isint )
+    {
+      fprintf(stdout, "Will FORALL execute [%s] for every member of [%s] (seen from model [%s]), PUSHING TO [%s]\n", toexec.c_str(), targmodel.c_str(), get_curr_model(trace).model->buildpath().c_str(), pushto.c_str());
   
-  push_proper_var_widx( pushto, trace, globals, fullvp, corr );
+
+      //Get model refererenced from here... must be initialized/size. OK. Can it be a var?
+      //Note the model must be found inside trace? Yea...
+      auto ep = findmodel( targmodel, trace, globals);
+      auto pushep = findmodel( pushto, trace, globals);
   
-  //YESSSSSSSSSSSSSSSSSSSSS  
-  return fullvp;
+      if( !ep.model )
+	{
+	  fprintf(stderr, "Couldnt find EP model in PUSHFORALL\n");
+	  exit(1);
+	}
+      if( !pushep.model )
+	{
+	  fprintf(stderr, "Couldnt find push EP model in PUSHFORALL\n");
+	  exit(1);
+	}
+
+      //REV: this automatically will execute for every one, getting it back, and
+      //appending...
+      size_t modelsize = ep.model->get_modelsize();
+      if(modelsize == 0 )
+	{
+	  //Fuck...
+	  fprintf(stderr, "ERROR, model size is zero!\n");
+	  exit(1);
+	}
+  
+      //vector<size_t> idxs( modelsize );
+      //std::iota(std::begin(idxs), std::end(idxs), 0);
+      //std::generate( idxs.begin(), idxs.end(), UniqueNumber );
+  
+      //ep.idx = idxs;
+  
+      //IDX overwrites it, I use IDX directly ;)
+      vector<elemptr> newtrace = trace;
+      ep.idx = vector<size_t>(1,0);
+      newtrace.push_back( ep );
+      //elemptr.idx = vector<size_t>(1, x); //1 through N? Does it make more sense to
+      //do one at a time and append them, or to do them all together here?
+      //What if each model is doing some sneaky shit like um, nested forall? That's fine.
+      //In that case, our IDX would be multi as well. I wouldn't know which is "pre",
+      //so lol. Inside of me, ref to PRE would look up old idx values through TRACE
+      //What would happen if IDX at that time point is like idx[1][2][3][4] etc.?
+      //And now it is like a gazillion. So which go with which? Each IDX generated some
+      //guys... I kind of like this way better...but...let's go with all together.
+  
+      //Assuming no mumbo fuck-ups this will work.
+      //varptr vp = DOCMD( toexec, trace, cmds, globals );
+  
+      varptr fullvp;
+
+      vector<size_t> corr;
+  
+      for(size_t x=0; x<modelsize; ++x)
+	{
+	  newtrace[ newtrace.size() -1].idx[ 0 ] = x;
+	  varptr vp = DOCMD( toexec, newtrace, cmds, globals );
+	  fullvp.valu.insert( fullvp.valu.end(), vp.valu.begin(), vp.valu.end() );
+	  fullvp.idx.insert( fullvp.idx.end(), vp.idx.begin(), vp.idx.end() );
+	  //REV: FUCK FUCK FUCK, do I need to insert idxs as corresp?
+
+      
+	  //I either got SIZE_T or VAL_T.
+	  if( vp.idx.size() > vp.valu.size() )
+	    {
+	      size_t nret = vp.idx.size();
+	      vector<size_t> toaddcorr( nret, x );
+	      corr.insert( corr.end(), toaddcorr.begin(), toaddcorr.end() );
+	      //idxs
+	    }
+	  else
+	    {
+	      size_t nret = vp.valu.size();
+	      vector<size_t> toaddcorr( nret, x );
+	      corr.insert( corr.end(), toaddcorr.begin(), toaddcorr.end() );
+	      //valus
+	    }
+
+	  //Fine, problem is, what to add for the POSTSYN corresps?
+	  //In other words, for each one generated, it must know what that number was
+	  //I need to generate for THAT as well? Fuck... That's fine though.
+	}
+
+      //REV: HERE HERE HERE. Note, I need to fucking PUSH to proper var, not just
+      //SET IT!@!!
+      //Gotta know which corr to set too!
+  
+      push_proper_var_widx( pushto, trace, globals, fullvp, corr );
+  
+      //YESSSSSSSSSSSSSSSSSSSSS  
+      return fullvp;
+    }
+
+  else //is int
+
+    {
+      fprintf(stdout, "Will FORALL execute [%s] for N times [%lu] (seen from model [%s]), PUSHING TO [%s]\n", toexec.c_str(), reptimes, get_curr_model(trace).model->buildpath().c_str(), pushto.c_str());
+  
+
+      //Get model refererenced from here... must be initialized/size. OK. Can it be a var?
+      //Note the model must be found inside trace? Yea...
+      auto pushep = findmodel( pushto, trace, globals);
+      
+      if( !pushep.model )
+	{
+	  fprintf(stderr, "Couldnt find push EP model in PUSHFORALL\n");
+	  exit(1);
+	}
+      
+      //REV: this automatically will execute for every one, getting it back, and
+      //appending...
+      if( reptimes == 0)
+	{
+	  //Fuck...
+	  fprintf(stderr, "ERROR, requested rep times is zero!\n");
+	  exit(1);
+	}
+
+      auto curr = get_curr_model(trace);
+      if( curr.idx.size() != 1 && curr.idx[0] != 0 )
+	{
+	  fprintf(stderr, "REV: major error in PUSH, the PARENT trace has idx size != 1 or it is not index 0...\n");
+	  exit(1);
+	}
+      
+      varptr fullvp;
+      vector<size_t> corr; //EMPTY BECAUSE THIS IS NOT A CORR!!!???!
+
+      //REV: think this through...what should corr contain? All new values I create have what relationship to host model? None...I assume?
+      //Normally I would push/pass x, which is the index of the "iterated through" model. And thus, e.g., iterated through model 1 would correspond to
+      //whatever X guys I generated.
+      //But, there is no iterated model. It is not even currmodel. Thus, corr is irrelevant. I.e. there are no correspondences.
+      for(size_t x=0; x<reptimes; ++x)
+	{
+	  varptr vp = DOCMD( toexec, trace, cmds, globals );
+	  fullvp.valu.insert( fullvp.valu.end(), vp.valu.begin(), vp.valu.end() );
+	  fullvp.idx.insert( fullvp.idx.end(), vp.idx.begin(), vp.idx.end() );
+	}
+      
+      push_proper_var_widx( pushto, trace, globals, fullvp, corr );
+      
+      return fullvp;
+    }
 }
-
-struct c_unique
-{
-  int current;
-  c_unique() {current=0;}
-  int operator()() {return ++current;}
-};
-
 
 
 FUNCDECL( FORALL )
@@ -1439,7 +1577,7 @@ FUNCDECL( FORALL )
   //guys... I kind of like this way better...but...let's go with all together.
 
   //Assuming no mumbo fuck-ups this will work.
-  varptr vp = DOCMD( toexec, trace, cmds, globals );
+  varptr vp = DOCMD( toexec, newtrace, cmds, globals );
   
   //for(size_t x=0; x<modelsize; ++x)
   //  {
@@ -1499,6 +1637,7 @@ cmdstore::cmdstore()
     ADDFUNCT( NEWLOCAL );
     ADDFUNCT( FORALL );
     ADDFUNCT( PUSHFORALL );
+    ADDFUNCT( PUSH );
   }
 
 
@@ -2270,12 +2409,19 @@ void symvar::addvalus( const varptr& vp )
       valu.insert( valu.end(), vp.valu.begin(), vp.valu.end() );
     }
   
-  setinit();
+  markinit();
 }
 
 
 void corresp::fill( const vector<size_t>& arg )
   {
+    if(arg.size() == 0)
+      {
+	fprintf(stderr, "REV: corresp::fill, trying to fill with 0 length, does this ever make sense?\n");
+	exit(1);
+      }
+		       
+    
     correspondence.insert( correspondence.end(), arg.begin(), arg.end() );
     numidx = vector<size_t>( correspondence.size(), 1 );
     
@@ -2288,17 +2434,17 @@ void corresp::fill( const vector<size_t>& arg )
   }
 
 
-void global_store::addiparam( const string& lname, const size_t& val )
+void global_store::addiparam( const string& lname, const vector<size_t>& val )
   {
     //auto m = symmodel::Create( "", "", lname );
     addempty( lname );
-    models[ models.size() - 1 ]->addivar( "", "", val );
+    models[ models.size() - 1 ]->addivars( "", "", val );
   }
 
-void global_store::addfparam( const string& lname, const real_t& val )
+void global_store::addfparam( const string& lname, const vector<real_t>& val )
   {
     addempty( lname );
-    models[ models.size() - 1 ]->addfvar( "", "", val );
+    models[ models.size() - 1 ]->addfvars( "", "", val );
   }
   
 void symvar::addivalu( const size_t& i)
@@ -2310,7 +2456,21 @@ void symvar::addivalu( const size_t& i)
 void symvar::addfvalu( const real_t& f)
 {
   valu.push_back( f );
-    parent->notify_size_change( valu.size() );
+  parent->notify_size_change( valu.size() );
+    
+}
+
+
+void symvar::addivalus( const vector<size_t>& i)
+{
+  ivalu.insert( ivalu.end(), i.begin(), i.end() );
+  parent->notify_size_change( ivalu.size() );
+}
+  
+void symvar::addfvalus( const vector<real_t>& f)
+{
+  valu.insert( valu.end(), f.begin(), f.end() );
+  parent->notify_size_change( valu.size() );
     
 }
 
@@ -2322,3 +2482,26 @@ void symmodel::setgenformodel( const string& modelname, const generator& g )
     fprintf(stdout, "Generator set for model [%s]\n", modelname.c_str() );
     mod->gen->enumerate();
   }
+
+
+void symvar::markinit()
+{
+  init = true;
+  
+  //REsize to this size.
+  size_t mysize = valu.size();
+  if( ivalu.size() > mysize )
+    {
+	mysize = ivalu.size();
+    }
+  parent->notify_size_change( mysize );
+}
+
+
+void corresp::markinit()
+{
+  //Set model size of parent to my correspondence.size() or whichever is greater?
+  //Only notify parent....other guy might be of diff size...
+  parent->notify_size_change( startidx.size() );
+    init=true;
+}

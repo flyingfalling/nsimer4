@@ -2,24 +2,15 @@
 //symmodel.h
 //Symbolic model struct and helpers.
 
+//REV: Alternate idea
+// Do everything as classes etc. and make user build like that. Definitely easier/typesafe...and more control over CUDA compilation?
+// allow direct specification of dx/dt?
+
 //TODO: add way to specify things to do at end/beginning of turn (for example, setting V[t-1] to V[t].)
 //TODO: add way to automatically determine dependencies among variables for update purposes (based on read/write during each update line of each model).
 //TODO: make options so that I can do "even" updates i.e. spike schedulers.
 
 
-//REV: where is the global store at? It is referenced by both generators and normal models. Does each model have its own (for temp vars), which are only
-//referenced by those models? In which case, we have a problem because models might create a tmp var in a parent var, then go through a hole to a child var for
-//part of the update funct. In which case, it would not find the final one. Yea, so each model has a single global store at its toplevel node, which is what it
-//searches. Hm, that might not work, it would mean I would need to look through base global stores of every model to find the value? Ugh...
-//Can I make an "equally sized" local variable? It will literally compile to a tmp... I need to know size? So it can be referenced by each? It is local to
-//each individual thread? Seems much nicer...
-//The global store really represents temp variables? Sure it's just a way to find them? During update time it literally compiles to something?
-
-//Ah, best idea is that it is local to that UPDATE FUNCT. Problem is that, in that case, it can't hold "global global" variables such as A, dt, etc.
-//Those are all copied at the beginning of each update function though, I guess. Yea, I like the idea of it being created locally for each update funct.
-//So, there is a basic global_state, which is copied and destroyed by each update funct etc. as it goes...because we wouldn't reference local vars
-//between update functions, would we? We could share the same global state for all GEN though? Nah...
-//So, global_state is 
 
 #pragma once
 
@@ -75,8 +66,8 @@ struct global_store
 {
   vector< std::shared_ptr<symmodel> > models;
   
-  void addiparam( const string& lname, const size_t& val );
-  void addfparam( const string& lname, const real_t& val );
+  void addiparam( const string& lname, const vector<size_t>& val );
+  void addfparam( const string& lname, const vector<real_t>& val );
   
   void add( std::shared_ptr<symmodel>& m )
   {
@@ -141,10 +132,7 @@ struct symvar
     return init;
   }
 
-  void setinit()
-  {
-    init = true;
-  }
+  void markinit();
   
   real_t getvalu( const size_t& idx );
   vector<real_t> getvalus( const vector<size_t>& idx );
@@ -165,8 +153,10 @@ struct symvar
   //REV: I *must* set the modelsize of root of this guy to be at least equal to me?
   //And set me to init?
   void addivalu( const size_t& i);
-    
   void addfvalu( const real_t& f);
+
+  void addivalus( const vector<size_t>& i);
+  void addfvalus( const vector<real_t>& f);
     
   void reset()
   {
@@ -288,10 +278,7 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
     return gv[ offset ];
   }
 
-  void markinit()
-  {
-    init=true;
-  }
+  void markinit();
   
   bool initialized()
   {
@@ -439,6 +426,7 @@ FUNCDECL(MULTFORALLCONNS);
 FUNCDECL( NEWLOCAL );
 FUNCDECL( FORALL );
 FUNCDECL( PUSHFORALL );
+FUNCDECL( PUSH );
 
 
 struct updatefunct_t
@@ -677,10 +665,10 @@ struct symmodel
   global_store getglobals()
   { return globalparams; }
 
-  void addfparam( const string& lname, const real_t& val )
+  void addfparam( const string& lname, const vector<real_t>& val )
   { globalparams.addfparam( lname, val ); }
 
-  void addiparam( const string& lname, const real_t& val )
+  void addiparam( const string& lname, const vector<real_t>& val )
   { globalparams.addfparam( lname, val ); }
   
   
@@ -1021,16 +1009,16 @@ struct symmodel
   }
 
 
-  void addfvar( const string& s, const string& t, const real_t& f )
+  void addfvars( const string& s, const string& t, const vector<real_t>& f )
   {
     addvar( s, t );
-    vars[ vars.size() - 1 ]->addfvalu( f );
+    vars[ vars.size() - 1 ]->addfvalus( f );
   }
 
-  void addivar( const string& s, const string& t, const size_t& i )
+  void addivars( const string& s, const string& t, const vector<size_t>& i )
   {
     addvar( s, t );
-    vars[ vars.size() - 1 ]->addivalu( i );
+    vars[ vars.size() - 1 ]->addivalus( i );
   }
 
   void addhole( const string& s )

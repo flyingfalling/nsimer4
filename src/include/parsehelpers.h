@@ -22,6 +22,7 @@ std::string remove_prefix( const std::string& str, const std::string& prefix );
 
 
 bool checknumeric( const string& s, real_t& ret );
+bool checknumericint( const string& s, size_t& ret );
 string CAT( const vector<string>& args, const string& sep  );
 
 
