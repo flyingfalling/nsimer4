@@ -275,7 +275,7 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	      fprintf(stderr, "REV: in getvar for real, something fxxup, myidx in IS CORR is not 1 [%s]->[%s]\n", premod.c_str(), postmod.c_str());
 	      exit(1);
 	    }
-	  vector<size_t> ret = mycorr->getall( myidx[0] );
+	  vector<size_t> ret = mycorr->getall( myidx );
 	  vp.idx = ret;
 	  return vp;
 	}
@@ -344,7 +344,7 @@ varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace,
 	      fprintf(stderr, "REV: we have a problem houston...\n");
 	      exit(1);
 	    }
-	  vector<size_t> transformed = corr->getall( ep.idx[0] );
+	  vector<size_t> transformed = corr->getall( ep.idx );
 
 	  //fprintf(stdout, "Got transformed, now try to get valus...\n");
 	  //REV" TODO HERE HERE HERE um, this should be rewritten with vget and vset
@@ -494,7 +494,7 @@ void set_proper_var_widx(const string& varname, const vector<elemptr>& trace, gl
 	  //In this case, it BETTER be the other way around...
 	  //Like, this kind of actually will work maybe though?
 	  //If I want to set all POSTSYN guys or some shit, to some value?
-	  vector<size_t> transformed = corr->getall( ep.idx[0] );
+	  vector<size_t> transformed = corr->getall( ep.idx );
 	  
 	  if(transformed.size() != 1)
 	    {
@@ -567,7 +567,7 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
       fprintf(stderr, "REV: error trying to directly SET size!!\n");
       exit(1);
     }
-  else if( iscorr )
+  else if( iscorr ) //REV: note I don't have a way to set TEMPORARY correspondences rofl.
     {
       //get final model haha
       elemptr m2 = findmodel( postmod, trace, globals );
@@ -598,8 +598,6 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	  //mycorr.insert( mycorr.end(), vp.idx.begin(), vp.idx.end() );
 	  mycorr->fill( newvals );
 	  //REV: literally pushed it directly, didn't need the corresp ;)
-	  
-	  
 	  
 	  return;
 	  
@@ -640,11 +638,32 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	  auto realvar = ep.model->vars[ loc[0] ];
 	  
 	  //REV: wat the fck, for pushing, I don't need corresp. I will make it...?
+	  //REV: I may need to actually create a new correspondencde if it does not exist (i.e. in the case this or target is a global model); 
 	  auto corr = getcorresp_forvar( ep.model, trace, realvar );
+
+	  //Sanity check that one of them is global? Can I do that by checking if parent exists?
 	  if( !corr )
 	    {
-	      fprintf(stderr, "REV: error no correspondence exists between models but I'm trying to link them? SHIT\n");
-	      exit(1);
+	      fprintf(stdout, "REV: corr between source model [%s] and newly created model [%s] did not exist, (not only not filled), thus I will have to create it. Under normal symmodel conditions this would be an error, but I am PUSHING, so it is a generator, and one of those models must be global.\n", get_curr_model(trace).model->buildpath().c_str(), ep.model->buildpath().c_str() );
+	      if( ep.model->parent )
+		{
+		  fprintf(stderr, "REV: target model HAS a parent, implying it is not global!\n");
+		  exit(1);
+		}
+	      if( !ep.model->parent && ep.model->is_submodel( get_curr_model( trace ).model ) )
+		{
+		  fprintf(stderr, "REV: target model has no parent (i.e. is global or ROOT of main hierarchy), yet root is same as the source model. This implies that it is not in globals\n");
+		  exit(1);
+		}
+
+	      ep.model->addcorresp( get_curr_model( trace ) );
+	      auto corr = getcorresp_forvar( ep.model, trace, realvar );
+	      if( !corr )
+		{
+		  fprintf(stderr, "ERROR in push_proper, etc.: corr doesn't exist even after adding corr...wtf?\n");
+		  exit(1);
+		}
+	      
 	    }
 	  if( ep.idx.size() != 1 )
 	    {
@@ -659,7 +678,7 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	    }
 
 	  realvar->addvalus( vp );
-
+	  
 	  //Need to set corresp to that which was passed to me.
 	  //Only do if size > 0 (i.e. there was a corr passed, shoudl even be 1 if it was just binding to a singel value?)
 	  if( topushascorr.size() > 0 )
@@ -1051,8 +1070,14 @@ FUNCDECL( SUMFORALLCONNS )
   
   varptr vp;
   vp.valu = vector<real_t>(1, 0);
+
+  if(currmodel.idx.size() != 1)
+    {
+      fprintf(stderr, "REV error in SUMFORALLCONNS, currmodel idx size is != 1 (is [%lu])\n", currmodel.idx.size() );
+      exit(1);
+    }
   
-  vector<size_t> mypost = corr->getall( currmodel.idx[0] );
+  vector<size_t> mypost = corr->getall( currmodel.idx );
   
   for( size_t i = 0; i<mypost.size(); ++i )
     {
@@ -1173,8 +1198,14 @@ FUNCDECL( MULTFORALLCONNS )
 
   varptr vp;
   vp.valu = vector<real_t>(1, 1.0);
+
+  if(currmodel.idx.size() != 1)
+    {
+      fprintf(stderr, "REV error in MULTFORALLCONNS, currmodel idx size is != 1 (is [%lu])\n", currmodel.idx.size() );
+      exit(1);
+    }
   
-  vector<size_t> mypost = corr->getall( currmodel.idx[0] );
+  vector<size_t> mypost = corr->getall( currmodel.idx );
   
   for( size_t i = 0; i<mypost.size(); ++i )
     {
@@ -1424,7 +1455,7 @@ FUNCDECL( PUSHFORALL )
   
       for(size_t x=0; x<modelsize; ++x)
 	{
-	  newtrace[ newtrace.size() -1].idx[ 0 ] = x;
+	  newtrace[ newtrace.size() - 1].idx[ 0 ] = x;
 	  varptr vp = DOCMD( toexec, newtrace, cmds, globals );
 	  fullvp.valu.insert( fullvp.valu.end(), vp.valu.begin(), vp.valu.end() );
 	  fullvp.idx.insert( fullvp.idx.end(), vp.idx.begin(), vp.idx.end() );
@@ -1455,7 +1486,7 @@ FUNCDECL( PUSHFORALL )
       //REV: HERE HERE HERE. Note, I need to fucking PUSH to proper var, not just
       //SET IT!@!!
       //Gotta know which corr to set too!
-  
+      
       push_proper_var_widx( pushto, trace, globals, fullvp, corr );
   
       //YESSSSSSSSSSSSSSSSSSSSS  
@@ -2023,13 +2054,13 @@ varptr exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel
       
       if( vcurridx.size() != 1 )
 	{
-	  fprintf(stderr, "REV: whoa (ERROR), doing nested exec_w_corresp\n");
+	  fprintf(stderr, "REV: whoa (ERROR), doing nested exec_w_corresp (curridx.size != 1)\n");
 	  exit(1);
 	}
       
-      size_t curridx = vcurridx[0];
+      //size_t curridx = vcurridx[0];
       
-      vector<size_t> c = corr->getall( curridx );
+      vector<size_t> c = corr->getall( vcurridx );
       
       if( c.size() != 1 )
 	{
@@ -2450,12 +2481,14 @@ void global_store::addfparam( const string& lname, const vector<real_t>& val )
 void symvar::addivalu( const size_t& i)
 {
   ivalu.push_back( i );
+  markinit();
   parent->notify_size_change( ivalu.size() );
 }
   
 void symvar::addfvalu( const real_t& f)
 {
   valu.push_back( f );
+  markinit();
   parent->notify_size_change( valu.size() );
     
 }
@@ -2475,13 +2508,48 @@ void symvar::addfvalus( const vector<real_t>& f)
 }
 
 void symmodel::setgenformodel( const string& modelname, const generator& g )
-  {
-    //copy generator?
-    auto mod = get_model( modelname );
-    mod->gen = std::make_shared<generator>(g);
-    fprintf(stdout, "Generator set for model [%s]\n", modelname.c_str() );
-    mod->gen->enumerate();
-  }
+{
+  //copy generator?
+  auto mod = get_model( modelname );
+  mod->gen = std::make_shared<generator>(g);
+  fprintf(stdout, "Generator set for model [%s]\n", modelname.c_str() );
+  mod->gen->enumerate();
+}
+
+void generateall( global_store& globals )
+{
+  //check that I am top model...
+  //If parent exists, It is not.
+  if( parent )
+    {
+      fprintf(stdout, "ERR, generateall, can only be called for ROOT of model (i.e. circuit level)\n");
+      exit(1);
+    }
+
+  //Determine correspondences by building markup of which models/variables are
+  //generated by each.
+
+  //Note that um, different sub-models may be inter-dependent, so it is not only
+  //top levels that we have to update (crap)
+  //Just get direct model pointers I guess.
+  //Oh shit, I was building direct model pointers. I need to somehow separate out
+  //individual generate "commands" that are interdependent between models, to
+  //figure out which to call in which order.
+  //I.e. generator, model, and line, are the order.
+  //When I specify a generator for a submodel, do I add to head model or sub model?
+  //Head is easiest, but then I need to determine "what" it is actually generating
+  //in terms of variables ;)
+  //Some things, like correspondences, need to be also accounted for...
+  //OK...so treat correspondences like variables :)
+  //In some cases it might be based on uninitialized guys?
+  
+}
+
+//This should never really be called...
+void generateme( global_store& globals )
+{
+  gen->generate( shared_from_this(), globals );
+}
 
 
 void symvar::markinit()

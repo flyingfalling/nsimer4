@@ -50,8 +50,6 @@ struct genfunct_t
 struct generator
 {
   genfunct_t genfunct;  
-  //std::shared_ptr<symmodel> model;
-  
   
   void generate( std::shared_ptr<symmodel>& model, global_store& globals );
 

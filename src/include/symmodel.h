@@ -242,9 +242,23 @@ struct corresp
   
   bool init=false;
 
+  //Going "through" me counts as a read I guess.
+  //Setting (resetting?) a member is a write...
+  //and create...is a create? hm.
+  size_t read=0;
+  size_t write=0;
+  size_t create=0;
+  
   std::vector<size_t> startidx;
   std::vector<size_t> numidx;
   std::vector<size_t> correspondence;
+
+  void reset()
+  {
+    read=0;
+    write=0;
+    create=0;
+  }
   
   corresp()
   {
@@ -304,6 +318,11 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
   //This calls derived getall for me
   vector<size_t> getall( const vector<size_t>& s )
   {
+    if( !initialized() )
+      {
+	++read;
+      }
+    
     vector<size_t> ret;
     for(size_t a=0; a<s.size(); ++a)
       {
@@ -317,6 +336,30 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
     return ret;
   }
 
+  //REV: well, fuck, I need to "bubble" some kind of "amiterating" or smething? Oh, somehow iterate the order of the guys?
+  //Or, run and check between? Won't work if they automatically generate dependencies...
+  //That's the problem is I can't access it to write it to GPU etc. ;)
+  //It's easy for update functs because none have been initialized yet, so I can use that info to build the dependencies tree.
+  //However, for generation, the functions will initialize the variables...
+  //How about, I find go through until I find an uninitialized guy...? And return some kind of failure?
+  //If I fail to have a guy initialized when I read, what happens...? It errors I assume. But it probably won't bubble back
+  //elegantly...it will exit the program lol
+  //So, instead I need to do dependency checking beforehand etc.
+
+  //When I "initially" run "generate", what does it do? I need to specify to not actually "generate" but just try.
+  // Test some global variable that checks?
+  // Problem is that um, some rely on other lines...e.g. that generate local variables.
+  // In which case those must be first...
+  // The problem is it always tries to go through a correspondence...? When it reads? So, it would error out because
+  // a) the correspondence doesn't exist (yet). Wait, correspondences ALWAYS exist I assume...? I never "add" a new correspondence...
+  // Oh wait, I do e.g. if I "create" a new local variable...
+  // So, all NEW (empty) must be called first...
+  // So what happens if I encounter that? A non-existing correspondencde, so I can't write that I was "read" yet?
+  // How about, I go through and determine to run each of those first. The problem is that all generators are maintained in variable with local global guys I think?
+
+  //So, first, go through and only mark NEWVAR (in fact, actually execute them?). I don't think it will actually ever CREATE a new correspondence. Oh wait, they will
+  //e.g. for PRE-POSTSYN guys. Fuck. In that case...yea. I will create it, which is fine...
+  
   void fill( const vector<size_t>& arg );
   
   //virtual size_t get( const size_t& s, const size_t& offset ) = 0;
@@ -630,6 +673,22 @@ struct conn_corresp : public corresp
 };
 
 
+struct gendep
+{
+  std::shared_ptr<symvar> targvar;
+  std::shared_ptr<generator> targen;
+  vector<size_t> lines; //line number(s) that generate the dependencies?
+};
+
+//I need a way to run "dummy" generation including PUSH/PUSHFORALL to determine
+//which set which. Note, generation may include SET, GEN, etc.
+//WRITE includes PUSH/SET/PUSHFORALL. But I can't write until it exists.
+//So, read, create, and write.
+
+
+//Note "reset" is another type of generator :)
+
+
 //Normal equals constructors are POINTER equal, i.e. just get pointer to it.
 //Only in case of "addmodel" do we invoke DEEP COPY.
 struct symmodel
@@ -668,8 +727,8 @@ struct symmodel
   void addfparam( const string& lname, const vector<real_t>& val )
   { globalparams.addfparam( lname, val ); }
 
-  void addiparam( const string& lname, const vector<real_t>& val )
-  { globalparams.addfparam( lname, val ); }
+  void addiparam( const string& lname, const vector<size_t>& val )
+  { globalparams.addiparam( lname, val ); }
   
   
   //REV: where are generators stored? I assume in this model?
@@ -684,7 +743,8 @@ struct symmodel
   void setgenformodel( const string& modelname, const generator& g );
   
   //REV: crap, this will need to be done on the GPU too at generation time fuck -_-;
-  
+
+  //Set init to true...?
   void notify_size_change( const size_t& i )
   {
     //some variable was pushed to...so size must have changed. Must update my size...
@@ -1163,6 +1223,33 @@ struct symmodel
   //time. Much safer ;) But the way it finds the pointer is it is resolved at this
   //point in time.
 
+  void fillemptymodels( )
+  {
+    size_t ms=get_modelsize();
+    if( ms == 0 )
+      {
+	fprintf(stderr, "REV: error in symmodel;;fillemptymodels; model size is 0!\n");
+	exit(1);
+      }
+
+    vector<real_t> tmp( ms, 0 );
+    
+    //iterate through all models' variables, fill with modelsize zero.
+    for(size_t x=0; x<vars.size(); ++x)
+      {
+	if( !vars[x]->isinit() )
+	  {
+	    vars[x]->addfvalus( tmp );
+	  }
+      }
+
+    for(size_t m=0; m<models.size(); ++m )
+      {
+	models[n]->fillemptymodels();
+      }
+  }
+			 
+  
   void fillhole( const string& h, const std::shared_ptr<symmodel>& modeltofillwith )
   {
     vector<string> parsed = parse( h );
