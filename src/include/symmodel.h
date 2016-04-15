@@ -162,10 +162,12 @@ struct global_store
 
 struct symvar
 {
-private:
+public:
+  std::shared_ptr<symmodel> parent;
   string name;
   string type;
-  
+
+private:
   std::vector<real_t> valu;
   std::vector<size_t> ivalu;
 
@@ -176,8 +178,7 @@ private:
   size_t written=0;
   size_t pushed=0;
 
-public:
-  std::shared_ptr<symmodel> parent;
+
 
 
 private:
@@ -221,8 +222,6 @@ private:
   void setivalu( const size_t& idx, const size_t& val );
   void setivalus( const vector<size_t>& idx, const vector<size_t>& val );
 
-  void addvalus( const varptr& vp );
-
   void addivalu( const size_t& i);
   void addfvalu( const real_t& f);
     
@@ -239,30 +238,16 @@ public:
   
   void addivalus( const vector<size_t>& i);
   void addfvalus( const vector<real_t>& f);
+
+  void addvalus( const varptr& vp );
     
+  
   void reset()
   {
     read=0;
     written=0;
     pushed=0;
   }
-  
-  void readvar()
-  {
-    ++read;
-  }
-
-  void writevar()
-  {
-    ++written;
-  }
-
-  void pushvar()
-  {
-    ++pushed;
-  }
-  
-  
   
   //Default is "my location"
 symvar( const string& n, const std::shared_ptr<symmodel>& p )
@@ -325,15 +310,14 @@ elemptr findmodel( const string& s, const vector<elemptr>& trace, global_store& 
 
 struct corresp
 {
+public:
   std::shared_ptr<symmodel> targmodel;
   std::shared_ptr<symmodel> parent;
-  
+
+private:
   bool init=false;
   bool genmode=true;
   
-  //Going "through" me counts as a read I guess.
-  //Setting (resetting?) a member is a write...
-  //and create...is a create? hm.
   size_t read=0;
   size_t written=0;
   size_t pushed=0;
@@ -341,28 +325,27 @@ struct corresp
   std::vector<size_t> startidx;
   std::vector<size_t> numidx;
   std::vector<size_t> correspondence;
-  
+
+
+public:
   void reset()
   {
     read=0;
     written=0;
     pushed=0;
   }
-
+  
   bool generating()
   {
     return genmode;
   }
-
+  
   void donegenerating()
   {
     genmode = false;
   }
   
-  corresp()
-  {
-  }
-
+  
   void push( const size_t& size, const vector<size_t>& topush )
   {
     ++pushed;
@@ -371,53 +354,14 @@ struct corresp
     numidx.push_back( topush.size() );
     correpondence.insert( correspondence.end(), topush.begin(), topush.end () );
   }
-  
-
-corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
-: targmodel( t ), parent(p )
-  {
-  }
-  
-  size_t get( const size_t& s, const size_t& offset )
-  {
-    std::vector<size_t> s2( 1, s );
-    vector<size_t> g = getall( s2 );
-    if( offset >= g.size() )
-      {
-	fprintf(stderr, "REV: error requested offset larger than size\n");
-	exit(1);
-      }
-    return g[ offset ];
-  }
-  
-  real_t getvar( const size_t& s, const symvar& var, const size_t& offset )
-  {
-    ++read;
-    vector<real_t> gv = getallvar( s, var );
-    if(offset > gv.size())
-      {
-	fprintf(stderr, "REV: ERROR, getvar > offset\n");
-	exit(1);
-      }
-
-    return gv[ offset ];
-  }
 
   void markinit();
-  
-  bool initialized()
-  {
-    return init;
-  }
-
+    
   bool isinit()
   {
     return init;
   }
-  
-  //REV: user never does a raw GET, they only use GETVAR.
-  //However, creating new vect is a pain in the ass, so just return IDX directly
-  virtual vector<size_t> getall( const size_t& s ) = 0;
+
 
   virtual void set( const vector<size_t>& idxs, const vector<size_t> newvals )
   {
@@ -425,21 +369,15 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
     return;
   }
 
-  //E.g. problem is if I want to "get all all" of an index, we have an issue. For now, just handle it as a single example.
-  
-  //This calls derived getall for me
   vector<size_t> getall( const vector<size_t>& s )
   {
     //Only if not init? only if generating?
-    if( !initialized() || generating() )
+    if( !isinit() || generating() )
       {
 	++read;
-      }
 
-    if(generating() || !initialized() )
-      {
-	vector<size_t> tmp( 1, 0 );
-	return tmp;
+	//vector<size_t> tmp( 1, 0 );
+	//return tmp;
       }
     
     vector<size_t> ret;
@@ -458,7 +396,18 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
   //Whenver I "would" fill it, I set "pushed" to true...?
   void fill( const vector<size_t>& arg );
   
-  virtual vector<real_t> getallvar( const size_t& s, const symvar& var ) = 0;
+  corresp()
+  {
+  }
+
+corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
+: targmodel( t ), parent(p )
+  {
+  }
+  
+    
+private:
+  virtual vector<size_t> getall( const size_t& s ) = 0;
 }; //end struct corresp
 
 
@@ -620,35 +569,18 @@ struct identity_corresp : public corresp
   {
     return vector<size_t>(1, s);
   }
-
   
-  
-  //size_t getvar( const size_t& s, const std::vector<real_t>& var )
-  vector<real_t> getallvar( const size_t& s, const symvar& var )
-  {
-    //size_t idx = get(s); //REV: no need, it's identity.
-    if( s >= var.valu.size() )
-      {
-	fprintf(stderr, "In identity corresp, error s > var size\n");
-	exit(1);
-      }
-
-    return vector<real_t>(1, var.valu[s] );
-  }
-  
-
  identity_corresp( const std::shared_ptr<symmodel>& targ,  const std::shared_ptr<symmodel>& p )
-    :
+   :
   corresp( targ, p )
     {
       
     }
-
+  
  
 };
 
 
-//One sided? Meh.
 struct const_corresp : public corresp
 {
   vector<size_t> getall( const size_t& s )
@@ -656,22 +588,7 @@ struct const_corresp : public corresp
     return vector<size_t>(1, 0);
   }
   
-  
-  //size_t getvar( const size_t& s, const std::vector<real_t>& var )
-  vector<real_t> getallvar( const size_t& s, const symvar& var )
-  {
-    //size_t idx = get(s); //REV: no need, it's identity.
-    if( s >= var.valu.size() )
-      {
-	fprintf(stderr, "In identity corresp, error s > var size\n");
-	exit(1);
-      }
-
-    return vector<real_t>(1, var.valu[0] );
-  }
-  
-  
-  const_corresp( const std::shared_ptr<symmodel>& targ,  const std::shared_ptr<symmodel>& p )
+ const_corresp( const std::shared_ptr<symmodel>& targ,  const std::shared_ptr<symmodel>& p )
     :
   corresp( targ, p )
   {
@@ -684,51 +601,27 @@ struct conn_corresp : public corresp
 {
   std::vector<size_t> getall( const size_t& s )
   {
-    //DUMMY
-    if(!init)
+    //DUMMY. Just return zero...because we have no way of knowing what it will be until it's actually filled
+    if( isinit()  == false || generating() )
       {
 	return vector<size_t>( 1, 0 );
       }
-    
-    if( s >= startidx.size() )
+    else
       {
-	fprintf(stderr, "ERROR in get in conn_corresp, s >= startidx size\n");
-	exit(1);
+	if( s >= startidx.size() )
+	  {
+	    fprintf(stderr, "ERROR in get in conn_corresp, s >= startidx size\n");
+	    exit(1);
+	  }
+	
+	size_t start = startidx[s];
+	size_t size = numidx[s];
+	return vector<size_t>( correspondence.begin()+start, correspondence.begin()+start+size);
       }
-    
-    size_t start = startidx[s];
-    size_t size = numidx[s];
-    return vector<size_t>( correspondence.begin()+start, correspondence.begin()+start+size);
   }
 
 
   
-  std::vector<real_t> getallvar( const size_t& s, const symvar& var )
-  {
-    std::vector<size_t> myidxs = getall( s );
-    std::vector<real_t> ret( myidxs.size() );
-    for( size_t x=0; x<myidxs.size(); ++x )
-      {
-	if( myidxs[x] >= correspondence.size() )
-	  {
-	    fprintf(stderr, "REV: error, myidxs x > correspondences array size\n");
-	    exit(1);
-	  }
-	
-	size_t targ = correspondence[ myidxs[x] ];
-	if( targ >= var.valu.size() )
-	  {
-	    fprintf(stderr, "REV: error, targ idx > var array size\n");
-	    exit(1);
-	  }
-	
-	
-	ret[x] = var.valu[ targ ];
-      }
-
-    return ret;
-  }
-
   void set( const vector<size_t>& idxs, const vector<size_t> newvals )
   {
     if(idxs.size() != newvals.size() )
@@ -1650,7 +1543,7 @@ struct symmodel
 	    vector<size_t> idx_in_submodel(1,0);
 	    
 	    //REV; Don't check this here, check this in the corresp struct? I.e. return dummy data if it is not existing yet (or exit?)
-	    if(mycorresp->initialized())
+	    if(mycorresp->isinit())
 	      {
 		//REV: TODO HERE, just return it directly, with new IDX_IN_SUBMODEL ;0
 		//REV: this is it!!! This is where I 
@@ -1893,21 +1786,7 @@ struct symmodel
     return containingmodel.model->vars[ loc[0] ];
   }
 
-  //std::shared_ptr<symvar> readvar_widx( const string& s, const size_t& idx, const vector<elemptr>& trace )
-  std::shared_ptr<symvar> readvar_widx( const string& s, const vector<size_t>& idx, const vector<elemptr>& trace )
-  {
-    std::shared_ptr<symvar> tmp = getvar_widx(s, idx, trace);
-    tmp->readvar();
-    return tmp;
-  }
-
-  //void setvar_widx( const string& s, const real_t& v, const size_t& idx, const vector<elemptr>& trace )
-  void setvar_widx( const string& s, const real_t& v, const vector<size_t>& idx, const vector<elemptr>& trace )
-  {
-    getvar_widx( s, idx, trace )->writevar();
-    return;
-  }
-
+  
   void prefixprint( size_t depth=0 )
   {
     for(size_t d=0; d<depth; ++d)
