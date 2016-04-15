@@ -11,7 +11,7 @@ void genfunct_t::execute( std::shared_ptr<symmodel>& model, global_store& global
       
       trace.push_back(tmp);
       
-      DOCMD( lines[l], trace, cmds, globals );
+      DOCMD( lines[l], trace, *cmds, globals );
     }
 }
 
@@ -20,3 +20,8 @@ void generator::generate( std::shared_ptr<symmodel>& model, global_store& global
   global_store localglobals = globals;
   genfunct.execute( model, localglobals );
 }
+
+void genfunct_t::addlocal(const string& fname, const string& f )
+  {
+    cmds->addlocal( fname, f );
+  }

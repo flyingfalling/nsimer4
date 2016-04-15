@@ -3,7 +3,6 @@
 #include <commontypes.h>
 #include <symmodel.h>
 
-
 struct symmodel;
 struct symvar;
 struct varptr;
@@ -92,25 +91,7 @@ public:
   }
 
 
-  vector<vector<size_t>> make_mirror( const size_t& src_modelsize )
-  {
-    vector<vector<size_t>> mirrored( src_modelsize );
-    for(size_t n=0; n<correspondence.size(); ++n)
-      {
-	size_t c=correspondence[n];
-	
-	if( c >= src_modelsize )
-	  {
-	    fprintf(stderr, "REV: error in mirroring correspondence...\n");
-	    exit(1);
-	  }
-	
-	mirrored[c].push_back( n );
-      }
-
-    return mirrored;
-      
-  }
+  vector<vector<size_t>> make_mirror( const size_t& src_modelsize );
   
   bool generating()
   {

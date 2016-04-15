@@ -31,49 +31,12 @@ vector<real_t> vect_uniform( const vector<real_t>& minval, const vector<real_t>&
 vector<real_t> vect_sqrt( const vector<real_t>& val );
 vector<real_t> vect_sqr( const vector<real_t>& val );
 
-bool check_idx( const string& varname )
-{
-  if( varname.compare( "IDX" ) == 0 )
-    {
-      return true;
-    }
-  return false;
-}
+bool check_idx( const string& varname );
 
-bool check_issize( const string& varname )
-{
-  if( varname.compare( "SIZE" ) == 0 )
-    {
-      return true;
-    }
-  return false;
-}
+bool check_issize( const string& varname );
 
 //REV: shit, if I parse "/" will it give me "nothing" or will it give me ""/""?
 //I'm leaning towards nothing? Heh...
-bool check_iscorr( const string& varname, string& premodelname, string& postmodelname )
-{
-  vector<string> res = parsecorr( varname );
+bool check_iscorr( const string& varname, string& premodelname, string& postmodelname );
 
-  fprintf(stdout, "CHECK IF CORRESP: [%s] became [%lu]\n", varname.c_str(), res.size());
-  if( res.size() == 2 )
-    {
-      
-      premodelname = res[0];
-      postmodelname = res[1];
-      fprintf(stdout, "PRE [%s], POST [%s]\n", premodelname.c_str(), postmodelname.c_str() );
-      return true;
-    }
-  return false;
-}
-
-bool check_cmd_is_multi( const string& s )
-{
-  const string mult = "MULTFORALL";
-  const string sum = "SUMFORALL";
-  if( s.compare( mult ) == 0 || s.compare( sum ) == 0 )
-    {
-      return true;
-    }
-  return false;
-}
+bool check_cmd_is_multi( const string& s );

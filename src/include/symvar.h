@@ -2,10 +2,13 @@
 
 #include <symmodel.h>
 #include <commontypes.h>
+#include <cmdstore.h>
+#include <corresp.h>
 
 struct symmodel;
 struct varptr;
 struct elemptr;
+struct corresp;
 
 struct symvar
 {
@@ -39,16 +42,7 @@ private:
     genmode = false;
   }
   
-  bool isconst()
-  {
-    //only if size is 1????
-    if( ivalu.size() == 1 || valu.size() == 1 )
-      {
-	return true;
-      }
-    return false;
-  }
-
+  
 
   bool isint()
   {
@@ -57,12 +51,14 @@ private:
 
   
   real_t getvalu( const size_t& idx );
-  vector<real_t> getvalus( const vector<size_t>& idx );
-
-  size_t getivalu( const size_t& idx );
-  vector<size_t> getivalus( const vector<size_t>& idx );
   
 
+  size_t getivalu( const size_t& idx );
+  
+  
+  vector<real_t> getvalus( const vector<size_t>& idx );
+  vector<size_t> getivalus( const vector<size_t>& idx );
+  
   void setvalu( const size_t& idx, const real_t& val );
   void setvalus( const vector<size_t>& idx, const vector<real_t>& val );
   
@@ -73,11 +69,23 @@ private:
   void addfvalu( const real_t& f);
     
 public:
+
+  bool isconst()
+  {
+    //only if size is 1????
+    if( ivalu.size() == 1 || valu.size() == 1 )
+      {
+	return true;
+      }
+    return false;
+  }
+
+  
   bool isinit()
   {
     return init;
   }
-
+  
   void markinit();
   
   varptr vgetvalus( const vector<size_t>& idx );

@@ -7,24 +7,23 @@
 
 #pragma once
 
-#include <symmodel.h>
+//#include <symmodel.h>
+#include <corresp.h>
 #include <cmdstore.h>
+#include <global_store.h>
 
 struct generator;
 struct symmodel;
-struct global_store;
+struct cmdstore;
 
 struct genfunct_t
 {
   vector<string> lines;
-  cmdstore cmds;
-  //std::shared_ptr<generator> gen;
   
-  void addlocal(const string& fname, const string& f )
-  {
-    cmds.addlocal( fname, f );
-  }
-
+  std::shared_ptr<cmdstore> cmds;
+  
+  void addlocal(const string& fname, const string& f );
+ 
   void execute( std::shared_ptr<symmodel>& model, global_store& globals );
   
   void add( const string& s )
@@ -42,6 +41,7 @@ struct genfunct_t
   
   genfunct_t()
   {
+    cmds = std::make_shared<cmdstore>( );
   }
 }; //end struct genfunct_t
 

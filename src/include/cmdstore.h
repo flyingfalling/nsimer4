@@ -4,13 +4,82 @@
 #include <commontypes.h>
 #include <fparser.h>
 #include <parsehelpers.h>
+#include <corresp.h>
+#include <symmodel.h>
+#include <elemptr.h>
+#include <nsimer4utils.h>
 
 struct elemptr; //defined in symmodel
-struct cmdstore; //defined here
+struct cmdstore;
 struct global_store; //defined in symmodel
 struct varptr; //defined in symmodel
+struct symvar;
+struct corresp;
+
 
 typedef std::function< varptr( const string&, const vector<elemptr>&, cmdstore&, global_store& ) > cmd_functtype;
+
+#define FUNCDECL( fname )   varptr fname( const string& arg, const vector<elemptr>& trace, cmdstore& cmds, global_store& globals )
+
+struct varptr
+{
+  vector<real_t> valu;
+  vector<size_t> idx; //necessary?
+};
+
+
+
+elemptr findmodel( const string& s, const vector<elemptr>& trace, global_store& globals );
+
+
+std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ, const std::shared_ptr<symvar>& var );
+std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace, const std::shared_ptr<symvar>& var );
+
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ );
+std::shared_ptr<corresp> getcorresp( const std::shared_ptr<symmodel>& targ, const vector<elemptr>& trace );
+
+elemptr get_curr_model( const vector<elemptr>& trace );
+bool check_cmd_is_multi( const string& s );
+varptr exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, cmdstore& cmds , global_store& globals);
+
+varptr get_proper_var_widx( const string& varname, const vector<elemptr>& trace, global_store& globals );
+void set_proper_var_widx(const string& varname, const vector<elemptr>& trace, global_store& globals, const varptr& vp );
+void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, global_store& globals, const varptr& vp, const vector<size_t>& topushascorr );		   
+
+elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace );
+elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>& trace, string& varname );
+string get_containing_model_path( const string& parsearg, string& vartail );
+
+
+
+
+
+FUNCDECL(DOCMD);
+FUNCDECL(READ);
+FUNCDECL(SET);
+FUNCDECL(SUM);
+FUNCDECL(MULT);
+FUNCDECL(DIV);
+FUNCDECL(DIFF);
+FUNCDECL(NEGATE);
+FUNCDECL(EXP);
+FUNCDECL(GAUSSRAND);
+FUNCDECL(UNIFORMRAND);
+
+FUNCDECL(SUMFORALL);
+FUNCDECL(MULTFORALL);
+
+FUNCDECL(SUMFORALLHOLES);
+FUNCDECL(SUMFORALLCONNS);
+FUNCDECL(MULTFORALLHOLES);
+FUNCDECL(MULTFORALLCONNS);
+
+FUNCDECL( NEWLOCAL );
+FUNCDECL( FORALL );
+FUNCDECL( PUSHFORALL );
+FUNCDECL( PUSH );
+
+
 
 struct cmdstore
 {
@@ -195,4 +264,4 @@ struct cmdstore
     
   }
     
-};
+}; //end struct CMDSTORE
