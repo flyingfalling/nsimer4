@@ -657,7 +657,7 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 		}
 
 	      ep.model->addcorresp( get_curr_model( trace ) );
-	      auto corr = getcorresp_forvar( ep.model, trace, realvar );
+	      corr = getcorresp_forvar( ep.model, trace, realvar );
 	      if( !corr )
 		{
 		  fprintf(stderr, "ERROR in push_proper, etc.: corr doesn't exist even after adding corr...wtf?\n");
@@ -1645,32 +1645,6 @@ void hole::add( const std::shared_ptr<symmodel>& h )
     add( #fname, fa );							\
   }
 
-cmdstore::cmdstore()
-  {
-    ADDFUNCT( DOCMD );
-    ADDFUNCT( READ );
-    ADDFUNCT( SET );
-    ADDFUNCT( SUM );
-    ADDFUNCT( MULT );
-    ADDFUNCT( DIV );
-    ADDFUNCT( DIFF );
-    ADDFUNCT( EXP );
-    ADDFUNCT( NEGATE );
-
-    ADDFUNCT( SUMFORALL );
-    ADDFUNCT( MULTFORALL );
-
-    ADDFUNCT( SUMFORALLHOLES );
-    ADDFUNCT( MULTFORALLHOLES );
-    ADDFUNCT( SUMFORALLCONNS );
-    ADDFUNCT( MULTFORALLCONNS );
-    
-    ADDFUNCT( NEWLOCAL );
-    ADDFUNCT( FORALL );
-    ADDFUNCT( PUSHFORALL );
-    ADDFUNCT( PUSH );
-  }
-
 
 
 real_t symvar::getvalu( const size_t& _idx )
@@ -1719,8 +1693,10 @@ varptr symvar::vgetvalus( const vector<size_t>& idx )
   varptr tmp;
   
   //Ugh, no type checking fuck this.
-  if( !init )
+  if( !initialized() || generating() )
     {
+      ++read;
+      //REV; will this cause any problems?
       tmp.valu = vector<real_t>( idx.size(), 0);
       return tmp;
     }
@@ -1741,8 +1717,11 @@ varptr symvar::vgetvalus( const vector<size_t>& idx )
 
 void symvar::vsetvalus( const vector<size_t>& idx, const varptr& v )
 {
-  if( !init )
-    {return;}
+  if( !initialized() || generating() )
+    {
+      ++written;
+      return;
+    }
 
   if( isint() )
     {
@@ -2108,11 +2087,21 @@ elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>
 
 void global_store::addempty( const string& localname )
 {
-  //My type is "TEMP"
-  auto nguy = symmodel::Create( "__TEMPVAR", "__TEMPVAR", localname );
-  //A single, unnamed variable haha.
-  nguy->addvar( "__TMPVARNAME", "__TMPVARTYPE");
-  models.push_back( nguy );
+  //Try to find one of the same...?
+  auto ep = findmodel( localname );
+  if( ep.model )
+    {
+      fprintf(stdout, "During generation (??): global_store ADDEMPTY [%s], model is already found, so just leaving things as they are.\n", localname.c_str());
+      return;
+    }
+  else
+    {
+      //My type is "TEMP"
+      auto nguy = symmodel::Create( "__TEMPVAR", "__TEMPVAR", localname );
+      //A single, unnamed variable haha.
+      nguy->addvar( "__TMPVARNAME", "__TMPVARTYPE");
+      models.push_back( nguy );
+    }
 }
 
 
@@ -2445,20 +2434,30 @@ void symvar::addvalus( const varptr& vp )
 
 
 void corresp::fill( const vector<size_t>& arg )
-  {
-    if(arg.size() == 0)
-      {
-	fprintf(stderr, "REV: corresp::fill, trying to fill with 0 length, does this ever make sense?\n");
-	exit(1);
-      }
-		       
-    
-    correspondence.insert( correspondence.end(), arg.begin(), arg.end() );
-    numidx = vector<size_t>( correspondence.size(), 1 );
-    
-    startidx.resize( correspondence.size() );
-    std::iota(std::begin(startidx), std::end(startidx), 0);
+{
+  if( generating() || !initialized() )
+    {
+      ++pushed;
+      ++written;
+    }
+  else
+    {
+  
+      //Need to check from CMDS that we are still in testmode....shit.
+      //So, initially have all corresps in "genmode" for one turn...? No, they may be done more than once. So automatically set them all elsewise. OK...
+      
+      if(arg.size() == 0)
+	{
+	  fprintf(stderr, "REV: corresp::fill, trying to fill with 0 length, does this ever make sense?\n");
+	  exit(1);
+	}
 
+      correspondence.insert( correspondence.end(), arg.begin(), arg.end() );
+      numidx = vector<size_t>( correspondence.size(), 1 );
+      
+      startidx.resize( correspondence.size() );
+      std::iota(std::begin(startidx), std::end(startidx), 0);
+    }
     //This will mark init, and also fill the other side ;)
     parent->notify_filled_corresp( targmodel );
     return;

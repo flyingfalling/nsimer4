@@ -11,6 +11,75 @@
 //TODO: make options so that I can do "even" updates i.e. spike schedulers.
 
 
+//REV: current issue is that during generation, I have trouble with not-yet-existing variables/correspondences, which must be read when determining dependencies.
+//Best idea is to simply go through in a dry run, create all temp vars, corresps, etc., but without actually doing anything (i.e. just return artificial values?)
+//And without adding any "size" yet. In other words, just read, and add required corresps/models, but don't actually do any pushing.
+//In other words, no actual initialization.
+//We run into a big problem if some guy tries to read someone without initializing it.
+//Assume user has (in general) correctly ordered WITHIN individual generators. Not necessary though...
+
+//So, worst case um, I try to read from a correspondence that does not exist yet...?
+//For a variable that doesn't exist yet! In that case, do I always create it (....fuck?).
+//No! I don't care! If it doesn't exist, it will return identity or constant!!!!
+//but, that's not right. Because it should not be identity/constant in most cases.
+//Hm, best idea is to (by default), when I add any model, I recursively add a correspondence to EVERY FUCKING EVERY MODEL, both in globals
+//and in the actual guy. That is fine. Let's do that ;) I could delete them afterwords...
+//NO, that will cause errors because they are not "active"
+
+//Note, shit, when I generate, those HIERARCY->GLOBAL TMP correspondences will not be dleted, but globals will be locally deleted.
+//But, it should never be referenced again.
+
+//OK, so the main issue is the difficulty of possibly trying to reference a not-yet-existing variable (solved but executing all ADDLOCAL first),
+//and then the issue of trying to reference a not-yet-existing correspondence (NOT solved by adding it when I actually run the PUSH command, because a totally
+//different function may try to read into that variable...before it is pushed back)
+//So, before I created myprobs. So other guys will try to read myprobs (via a corresp to it), before it has been pushed. I.e. read before push.
+//So, the result is to execute all pushes first. But, some pushes may try to read from a "pushed" guy, which would do the creating.
+//So...I'm fucked? If I ever try to read from a correspondence that doesn't exist, create it. If the model the correspondence refers to does not exist,
+//Create it? That...that is difficult. Yea, let's assume local ordering is always preserved.
+//If so, we should never encounter issues? ok...so just read indiv vars. How far do I need to "read back" before there is a dependency?
+//Literally take the "slots" between that and the previous dependency in that one as the stuff to do beforehand.
+
+//OK, do it.
+
+//For each line (?), I literally do the full read of MODEL vars only.
+//In terms of set/write/push.
+//write/set take precedence over read. I.e. all set/write must happen before all reads to a given variable.
+//For each variable, keep track of what line/what gen it was written by. Problem is it will actually try to construct...? which will fuck everything up?
+//How about just do everything, and then unalloc it later? That is way easier...
+//So, it's not to check that everything is ready...? If source is not init, just do shit? It will never be init in some case? Shit...
+//I need to tell it that this is like "test" mode...
+//I just need to avoid pushing if that is set, that is all.
+//Like just set vars *as if* I had pushed, but don't.
+//And each guy will specify individual VARIABLES read/written by each line ;)
+//I really don't like the "global" idea ;(
+
+//I can't set a variable at the top level of circuit because then "globals" would not be able to read that.
+//I could literally set a global variable, but that is way too ghetto.
+//I could set a variable in CMDS, but again...
+
+
+//Um, static variable? Not threadsafe lol fuck. Best to "pass" it along with something, like CMDS? Always pass same cmds along with everything?
+//At any rate...what? I just don't push...I do add corrs though ;) lol. But without filling.
+
+//No filling, no pushing.
+
+//REV: yea...yea...I need a much better way than to have the separate globals...so that I can check together? Just have a static CMD shared by all I guess? yea...
+
+
+//So, check if generating() == true (in variable or corresp)
+//If so, I don't do anything.
+//Do I add corresp? I might add it but not fill it...? Filling it is bad? Shit, then when will I fill it? Rofl... when I run it again what will I do?
+//How will I undo everything? if I push back the local variable now, when I re-run it, when will it be pushed back? oh, it won't need to be, it is already there?
+//Nah, but it might just be a local guy that disappears, so ...
+
+//Will I ever actually build/run it after doing a check? Sure, for sanity check. So, in that case, what? Do I only generate the guys? What happens when I hit an "addvar"
+//but it's already added? That's fine, I just ignore it ;)
+
+//OK, at any rate, "adds" are all done first, fine.
+
+//Then, push -> set -> read.
+//Whenever something is read or written to variable, we set it. Just do it IN the variable itself...much easier...
+
 
 #pragma once
 
@@ -93,30 +162,35 @@ struct global_store
 
 struct symvar
 {
+private:
   string name;
   string type;
   
-  //real_t valu;
   std::vector<real_t> valu;
-  std::vector<size_t> ivalu; //ROFL, I REALLY ADDED IT!!
-  
-  bool isint()
-  {
-    return (ivalu.size() > 0);
-  }
-
-  varptr vgetvalus( const vector<size_t>& idx );
-  void vsetvalus( const vector<size_t>& idx, const varptr& v );
-  
-  size_t read=false;
-  size_t written=false;
-
-  std::shared_ptr<symmodel> parent;
+  std::vector<size_t> ivalu;
 
   bool init=false;
+  bool genmode=true;
 
-  //bool isconst=false;
+  size_t read=0;
+  size_t written=0;
+  size_t pushed=0;
 
+public:
+  std::shared_ptr<symmodel> parent;
+
+
+private:
+  bool generating()
+  {
+    return genmode;
+  }
+
+  void donegenerating()
+  {
+    genmode = false;
+  }
+  
   bool isconst()
   {
     //only if size is 1????
@@ -126,13 +200,13 @@ struct symvar
       }
     return false;
   }
-  
-  bool isinit()
+
+
+  bool isint()
   {
-    return init;
+    return (ivalu.size() > 0);
   }
 
-  void markinit();
   
   real_t getvalu( const size_t& idx );
   vector<real_t> getvalus( const vector<size_t>& idx );
@@ -149,12 +223,20 @@ struct symvar
 
   void addvalus( const varptr& vp );
 
-
-  //REV: I *must* set the modelsize of root of this guy to be at least equal to me?
-  //And set me to init?
   void addivalu( const size_t& i);
   void addfvalu( const real_t& f);
+    
+public:
+  bool isinit()
+  {
+    return init;
+  }
 
+  void markinit();
+  
+  varptr vgetvalus( const vector<size_t>& idx );
+  void vsetvalus( const vector<size_t>& idx, const varptr& v );
+  
   void addivalus( const vector<size_t>& i);
   void addfvalus( const vector<real_t>& f);
     
@@ -162,8 +244,9 @@ struct symvar
   {
     read=0;
     written=0;
+    pushed=0;
   }
-
+  
   void readvar()
   {
     ++read;
@@ -172,6 +255,11 @@ struct symvar
   void writevar()
   {
     ++written;
+  }
+
+  void pushvar()
+  {
+    ++pushed;
   }
   
   
@@ -241,28 +329,49 @@ struct corresp
   std::shared_ptr<symmodel> parent;
   
   bool init=false;
-
+  bool genmode=true;
+  
   //Going "through" me counts as a read I guess.
   //Setting (resetting?) a member is a write...
   //and create...is a create? hm.
   size_t read=0;
-  size_t write=0;
-  size_t create=0;
+  size_t written=0;
+  size_t pushed=0;
   
   std::vector<size_t> startidx;
   std::vector<size_t> numidx;
   std::vector<size_t> correspondence;
-
+  
   void reset()
   {
     read=0;
-    write=0;
-    create=0;
+    written=0;
+    pushed=0;
+  }
+
+  bool generating()
+  {
+    return genmode;
+  }
+
+  void donegenerating()
+  {
+    genmode = false;
   }
   
   corresp()
   {
   }
+
+  void push( const size_t& size, const vector<size_t>& topush )
+  {
+    ++pushed;
+    
+    startidx.push_back( corrspondence.size() );
+    numidx.push_back( topush.size() );
+    correpondence.insert( correspondence.end(), topush.begin(), topush.end () );
+  }
+  
 
 corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
 : targmodel( t ), parent(p )
@@ -271,7 +380,8 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
   
   size_t get( const size_t& s, const size_t& offset )
   {
-    vector<size_t> g = getall( s );
+    std::vector<size_t> s2( 1, s );
+    vector<size_t> g = getall( s2 );
     if( offset >= g.size() )
       {
 	fprintf(stderr, "REV: error requested offset larger than size\n");
@@ -282,6 +392,7 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
   
   real_t getvar( const size_t& s, const symvar& var, const size_t& offset )
   {
+    ++read;
     vector<real_t> gv = getallvar( s, var );
     if(offset > gv.size())
       {
@@ -310,6 +421,7 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
 
   virtual void set( const vector<size_t>& idxs, const vector<size_t> newvals )
   {
+    ++written;
     return;
   }
 
@@ -318,9 +430,16 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
   //This calls derived getall for me
   vector<size_t> getall( const vector<size_t>& s )
   {
-    if( !initialized() )
+    //Only if not init? only if generating?
+    if( !initialized() || generating() )
       {
 	++read;
+      }
+
+    if(generating() || !initialized() )
+      {
+	vector<size_t> tmp( 1, 0 );
+	return tmp;
       }
     
     vector<size_t> ret;
@@ -336,35 +455,10 @@ corresp( const std::shared_ptr<symmodel>& t, const std::shared_ptr<symmodel>& p)
     return ret;
   }
 
-  //REV: well, fuck, I need to "bubble" some kind of "amiterating" or smething? Oh, somehow iterate the order of the guys?
-  //Or, run and check between? Won't work if they automatically generate dependencies...
-  //That's the problem is I can't access it to write it to GPU etc. ;)
-  //It's easy for update functs because none have been initialized yet, so I can use that info to build the dependencies tree.
-  //However, for generation, the functions will initialize the variables...
-  //How about, I find go through until I find an uninitialized guy...? And return some kind of failure?
-  //If I fail to have a guy initialized when I read, what happens...? It errors I assume. But it probably won't bubble back
-  //elegantly...it will exit the program lol
-  //So, instead I need to do dependency checking beforehand etc.
-
-  //When I "initially" run "generate", what does it do? I need to specify to not actually "generate" but just try.
-  // Test some global variable that checks?
-  // Problem is that um, some rely on other lines...e.g. that generate local variables.
-  // In which case those must be first...
-  // The problem is it always tries to go through a correspondence...? When it reads? So, it would error out because
-  // a) the correspondence doesn't exist (yet). Wait, correspondences ALWAYS exist I assume...? I never "add" a new correspondence...
-  // Oh wait, I do e.g. if I "create" a new local variable...
-  // So, all NEW (empty) must be called first...
-  // So what happens if I encounter that? A non-existing correspondencde, so I can't write that I was "read" yet?
-  // How about, I go through and determine to run each of those first. The problem is that all generators are maintained in variable with local global guys I think?
-
-  //So, first, go through and only mark NEWVAR (in fact, actually execute them?). I don't think it will actually ever CREATE a new correspondence. Oh wait, they will
-  //e.g. for PRE-POSTSYN guys. Fuck. In that case...yea. I will create it, which is fine...
-  
+  //Whenver I "would" fill it, I set "pushed" to true...?
   void fill( const vector<size_t>& arg );
   
-  //virtual size_t get( const size_t& s, const size_t& offset ) = 0;
   virtual vector<real_t> getallvar( const size_t& s, const symvar& var ) = 0;
-  //virtual real_t getvar( const size_t& s, const symvar& var, const size_t& offset ) = 0;
 }; //end struct corresp
 
 
@@ -843,12 +937,13 @@ struct symmodel
     corr->numidx.clear();
     for(size_t x=0; x<get_modelsize(); ++x)
       {
-
-	corr->startidx.push_back( corr->correspondence.size() );
-	corr->numidx.push_back( mycorresps[x].size() );
-	corr->correspondence.insert( corr->correspondence.end(),
-				     mycorresps[x].begin(),
-				     mycorresps[x].end() );
+	corr->push( mycorresps[x].size(), mycorresps[x] );
+	
+	//corr->startidx.push_back( corr->correspondence.size() ); //curr end location.
+	// corr->numidx.push_back( mycorresps[x].size() );
+	//  corr->correspondence.insert( corr->correspondence.end(),
+	//			     mycorresps[x].begin(),
+	//			     mycorresps[x].end() );
       }
     
     //corr is now initialized!
@@ -865,16 +960,8 @@ struct symmodel
     return;
   }
   
-  //Check that this is not top level?
-  //When 'adding' hole, (holes are never added from holes)
-  //we directly check corresp, and add if it doesn't exist.
-  //What to do for "same" guys? It will return false, but return nothing? Shit.
-  //Always returns "identity"? Which is a "type" of derived correspodnence? Fuck?!
   void addcorresp( const std::shared_ptr<symmodel>& targ )
   {
-    //check that it does not exist, and add only if it does not.
-    //Only operates on "top level" models!!
-    //std::shared_ptr<corresp> tmp;
     auto tmp = getcorresp( targ );
     
     if( !tmp )
