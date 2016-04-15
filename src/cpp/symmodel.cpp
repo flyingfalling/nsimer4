@@ -1,59 +1,5 @@
-//REV: 4 Apr 2016
-//Contains symmodel, for constructing symbolic models
-
-//TODO fix types of guys...
-
-
 #include <symmodel.h>
 
-vector<string> parse( const string& name)
-{
-  bool emptyrepeats=false;
-  return tokenize_string( name, "/", emptyrepeats );
-}
-
-vector<string> parsetypes( const string& name)
-{
-  bool emptyrepeats=false;
-  return tokenize_string( name, "|", emptyrepeats );
-}
-
-vector<string> parsecorr( const string& name)
-{
-  //bool emptyrepeats=false;
-  bool emptyrepeats=true;
-
-  
-  
-  return tokenize_string( name, "->", emptyrepeats );
-}
-
-
-//REV: TYPE
-// varptr funct( string, trace, cmds, globalstore )
-// All accesses are done via reference to globalstore and trace, we don't do raw TRACE gets usually right?
-// Hm, make TRACE a trace struct, which has a global_store, and a thing?
-// Um, shit, fuck, shit. Where are global stores created? They are created possibly in every update function? It may use a "new" and "local" global store.
-// But, all have access to a (copy of?) the GLOBAL global store? Which may have some things like dt etc.?
-// Does it "set" dt? I can never modify dt I guess... A local copy of DT?
-// The local globalstore is used for tmp variables, and also for accessing temp variables. So...we have two global stores. One for tmp, and one that has "global"
-// variables like DT, etc.? We "choose" which ones to go into? variables like dt are automatically written there I guess... It's in global store, i.e. top level model
-// Oh well. EZ. Same one, just don't overlap rofl. Global store models are DIRECTLY variables. Good.
-// When I call "GET CORRESP", what does it do? It looks for the one that has the match between them. First it checks if they are part of same "parent" model?
-// in this case, !parent, so nothing will happen (fuck?). They will never be part of same parent, so that is good.
-// How do I handle schedulers? :)
-
-//I  need to manually set the correspondence? For some cases it is start/size/corresp. I only set corresp, and compute start/size from there. For guys I manaully create
-//I assume it needs blah. But what if I pass a size/start cmd as well? Then I can construct that way? rofl fuck me.
-
-// I always specify "big-small". And it generates everything else ;)
-
-
-//REV: first, fix this.
-//Make sure it searches through globals as well (to find variables, not functs)
-//Make sure corresp are appropriately checked?
-//Vartypes contain their own thing, like they might be "PARAM", in which case, I don't look for a corresp or some shit.
-//Or I return a special "const" guy that always returns 0 heh.
 FUNCDECL(DOCMD)
 {
   //First, replace it with locals...
@@ -107,28 +53,6 @@ FUNCDECL(DOCMD)
   return retval;
 }
 
-//Problem is it has a pointer based on what "type" is, and I have to selectively change based on that heh...
-//Just do in READ and SET, much easier (problem is when I go to try and find the one to push to, etc.)
-
-//Anyway, fine...
-
-//Issue now is to sort out my method of referencing them ! :)
-//After parsing "varname", I do:
-//If IDX, I return IDX,
-//If SIZE, I return that model's SIZE (note, model could be a corresp, or a var!)
-//If X->Y, it is a corrsp. So, I'm going to push back to CORRESP, or something...
-//That's fine. I want to get..?
-
-//Note, I'm going to generate for syn2-1. Specifically, I reference presyn and postsyn. So, I even more specifically. So, I specifically want to do ->presyn and ->postsyn.
-//-> indicates "source" Ah, got it, empty means nothing. -> means conn to X. So, I divide by -> and it gives left is empty, right is blah. Fine. Right means "me" :)
-
-//Shit, problem, what does X->Y mean where there is slashes? I assume in both cases, it refers to a CORRESPONDENCE. I.e. the correspondence itself.
-//Yea, so literally, for presyn model idxs (X) that are passed, what are corresponding postsyn model idxs. Note, I "getall" for each.
-
-//Easiest to just have only real types in there...problem is when I return "idxs" it does something...
-//Note, in SET I have to do something to...?
-
-
 
 elemptr findmodel( const string& s, const vector<elemptr>& trace, global_store& globals )
 {
@@ -168,42 +92,6 @@ elemptr findmodel( const string& s, const vector<elemptr>& trace, global_store& 
 	}
     }
   //FINDS MODEL IN BOTH GLOBALS AND LOCALS?
-}
-
-bool check_idx( const string& varname )
-{
-  if( varname.compare( "IDX" ) == 0 )
-    {
-      return true;
-    }
-  return false;
-}
-
-bool check_issize( const string& varname )
-{
-  if( varname.compare( "SIZE" ) == 0 )
-    {
-      return true;
-    }
-  return false;
-}
-
-//REV: shit, if I parse "/" will it give me "nothing" or will it give me ""/""?
-//I'm leaning towards nothing? Heh...
-bool check_iscorr( const string& varname, string& premodelname, string& postmodelname )
-{
-  vector<string> res = parsecorr( varname );
-
-  fprintf(stdout, "CHECK IF CORRESP: [%s] became [%lu]\n", varname.c_str(), res.size());
-  if( res.size() == 2 )
-    {
-      
-      premodelname = res[0];
-      postmodelname = res[1];
-      fprintf(stdout, "PRE [%s], POST [%s]\n", premodelname.c_str(), postmodelname.c_str() );
-      return true;
-    }
-  return false;
 }
 
 
@@ -671,7 +559,7 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	      exit(1);
 	    }
 
-	  if( corr->initialized() )
+	  if( corr->isinit() )
 	    {
 	      fprintf(stderr, "Trying to push back but already init fuck\n");
 	      exit(1);
@@ -1638,258 +1526,8 @@ void hole::add( const std::shared_ptr<symmodel>& h )
   }
 
 
-
-#define ADDFUNCT(fname)							\
-  {									\
-    cmd_functtype fa = fname;						\
-    add( #fname, fa );							\
-  }
-
-
-
-real_t symvar::getvalu( const size_t& _idx )
-{
-  
-  if( !init )
-    {
-      return 0;
-    }
-
-  if( isconst() )
-    {
-      return valu[0];
-    }
-  
-  if( _idx >= valu.size() )
-    {
-      fprintf(stderr, "In symvar, getvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", _idx, valu.size(), name.c_str(), parent->buildpath().c_str());
-      exit(1);
-    }
-
-  return valu[_idx];
-  
-}
-
-vector<real_t> symvar::getvalus( const vector<size_t>& _idx )
-{
-  if( !init )
-    {
-      return vector<real_t>( _idx.size(), 0);
-    }
-
-  vector<real_t> ret;
-  for(size_t x=0; x<_idx.size(); ++x)
-    {
-      ret.push_back( getvalu( _idx[x] ) );
-    }
-  
-  return ret;
-  
-}
-
-
-varptr symvar::vgetvalus( const vector<size_t>& idx )
-{
-  varptr tmp;
-  
-  //Ugh, no type checking fuck this.
-  if( !initialized() || generating() )
-    {
-      ++read;
-      //REV; will this cause any problems?
-      tmp.valu = vector<real_t>( idx.size(), 0);
-      return tmp;
-    }
-  
-  if( isint() )
-    {
-      tmp.idx = getivalus( idx );
-    }
-  else
-    {
-      tmp.valu = getvalus( idx );
-    }
-
-  return tmp;
-  
-  
-}
-
-void symvar::vsetvalus( const vector<size_t>& idx, const varptr& v )
-{
-  if( !initialized() || generating() )
-    {
-      ++written;
-      return;
-    }
-
-  if( isint() )
-    {
-      setivalus( idx, v.idx );
-    }
-  else
-    {
-      setvalus(idx, v.valu );
-    }
-  return;
-}
-
-  
-size_t symvar::getivalu( const size_t& _idx )
-{
-   if( !init )
-    {
-      return 0;
-    }
-
-   if( isconst() )
-    {
-      return ivalu[0];
-    }
-  
-  if( _idx >= ivalu.size() )
-    {
-      fprintf(stderr, "In symvar, getivalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", _idx, ivalu.size(), name.c_str(), parent->buildpath().c_str());
-      exit(1);
-    }
-
-  return ivalu[_idx];
-  
-  
-}
-vector<size_t> symvar::getivalus( const vector<size_t>& _idx )
-{
-  if( !init )
-    {
-      return vector<size_t>( _idx.size(), 0);
-    }
-
-  vector<size_t> ret;
-  for(size_t x=0; x<_idx.size(); ++x)
-    {
-      ret.push_back( getivalu( _idx[x] ) );
-    }
-  
-  return ret;
-}
-
-
-void symvar::setivalu( const size_t& _idx, const size_t& val )
-{
-  if( !init )
-    {
-      //do nothing
-      //return;
-      return;
-    }
-  else if( isconst() )
-    {
-      if( _idx != 0 )
-	{
-	  fprintf( stderr, "Whoa error in setval, isconst but idx zero element is not 0...\n");
-	  exit(1);
-	}
-      
-      ivalu[0] = val;
-      
-    }
-  else
-    {
-      if( _idx >= ivalu.size() )
-	{
-	  fprintf(stderr, "In symvar, setvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", _idx, ivalu.size(), name.c_str(), parent->buildpath().c_str());
-	  exit(1);
-	}
-      
-      ivalu[_idx] = val;
-    }
-}
-
-void symvar::setivalus( const vector<size_t>& _idx, const vector<size_t>& val )
-{
-  if( !init )
-    {
-      //do nothing
-    }
-  else
-    {
-  
-      if(val.size() != _idx.size())
-	{
-	  fprintf(stderr, "setvalus, error idx size and val size not same\n");
-	  exit(1);
-	}
-  
-      for(size_t x=0; x<_idx.size(); ++x)
-	{
-	  setivalu( _idx[x], val[x] );
-	}
-    }
-  
-  return;
-}
- 
-
-void symvar::setvalu( const size_t& _idx, const real_t& val )
-{
-  if( !init )
-    {
-      //do nothing
-      //return;
-    }
-  else if( isconst() )
-    {
-      if( _idx != 0 )
-	{
-	  fprintf( stderr, "Whoa error in setval, isconst but idx zero element is not 0...\n");
-	  exit(1);
-	}
-      
-      valu[0] = val;
-      
-    }
-  else
-    {
-      if( _idx >= valu.size() )
-	{
-	  fprintf(stderr, "In symvar, setvalu, idx [%lu] > size of valu array [%lu], var name [%s] in containing model [%s]\n", _idx, valu.size(), name.c_str(), parent->buildpath().c_str());
-	  exit(1);
-	}
-      
-      valu[_idx] = val;
-    }
-}
-
-void symvar::setvalus( const vector<size_t>& _idx, const vector<real_t>& val )
-{
-  if( !init )
-    {
-      //do nothing
-    }
-  else
-    {
-  
-      if(val.size() != _idx.size())
-	{
-	  fprintf(stderr, "setvalus, error idx size and val size not same\n");
-	  exit(1);
-	}
-  
-      for(size_t x=0; x<_idx.size(); ++x)
-	{
-	  setvalu( _idx[x], val[x] );
-	}
-    }
-  
-  return;
-}
-
-
-//Is targ ever not parent of var? Wtf?
 std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ, const std::shared_ptr<symvar>& var )
 {
-  //std::shared_ptr<corresp> tmp;
-
   if( !var->parent)
     {
       fprintf(stderr, "getcorresp forvar , var has no parent exiting\n");
@@ -1901,20 +1539,6 @@ std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& cur
       exit(1);
     }
   
-  //curr and targ are same? If so, it returns identity anyway. If target VAR is *CONSTANT* (var, not model!), then I can return
-  //CONSTANT ;)
-
-  //DO at this point.
-
-  //Also need to code inside getcorresp, where it will check the VARIABLE specifically, not the models orz.
-
-  //REV: TODO HERE HERE HERE
-  //Need to make it so that when I "create" correspondence, it creates the other side too.
-  //EVEN if I just literally (manually) am "pushing back" to it.
-  //At end of push-for-all I need to create other side of all correspondences (if they do not exist on other side yet, and this corresp is init).
-  //means I can't partially produce vars over multi gen functs.
-  
-  //bool gotit = curr->getcorresp_forvar( targ, tmp, var );
   auto tmp = curr->getcorresp( var );
   if(!tmp)
     {
@@ -1961,24 +1585,6 @@ elemptr get_curr_model( const vector<elemptr>& trace )
   return trace[ trace.size()-1 ];
 }
 
-bool check_cmd_is_multi( const string& s )
-{
-  const string mult = "MULTFORALL";
-  const string sum = "SUMFORALL";
-  if( s.compare( mult ) == 0 || s.compare( sum ) == 0 )
-    {
-      return true;
-    }
-  return false;
-}
-
-
-//REV: TODO NEED TO REWRITE THIS TO HANDLE idx being vector<size_t>
-//What does this do? This takes a string toexec, target model, and trace, and executes it.
-//This is *ONLY* calle when going through a hole I think (i.e. MULTFORALLHOLES, or SUMFORALLHOLES). In other words, nothing has changed, we now
-//This will always only compute a SINGLE value, regardless of multi-idxs etc.
-
-//real_t exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, const cmdstore& cmds )
 varptr exec_w_corresp( const std::string& toexec, const std::shared_ptr<symmodel>& m, const vector<elemptr>& trace, cmdstore& cmds, global_store& globals )
 {
   //RE-parse toexec, to check what function it is.
@@ -2085,319 +1691,6 @@ elemptr get_containing_model_widx( const string& parsearg, const vector<elemptr>
 
 
 
-void global_store::addempty( const string& localname )
-{
-  //Try to find one of the same...?
-  auto ep = findmodel( localname );
-  if( ep.model )
-    {
-      fprintf(stdout, "During generation (??): global_store ADDEMPTY [%s], model is already found, so just leaving things as they are.\n", localname.c_str());
-      return;
-    }
-  else
-    {
-      //My type is "TEMP"
-      auto nguy = symmodel::Create( "__TEMPVAR", "__TEMPVAR", localname );
-      //A single, unnamed variable haha.
-      nguy->addvar( "__TMPVARNAME", "__TMPVARTYPE");
-      models.push_back( nguy );
-    }
-}
-
-
-vector<size_t> global_store::modellocs( const string& s )
-  {
-    vector<size_t> loc;
-    for( size_t m=0; m<models.size(); ++m )
-      {
-	if( models[m]->localname.compare( s ) == 0 )
-	  {
-	    loc.push_back( m );
-	  }
-      }
-    return loc;
-  }
-
-vector<size_t> global_store::modellocs(const std::shared_ptr<symmodel>& m  )
-{
-  vector<size_t> loc;
-  for( size_t a=0; a<models.size(); ++a )
-    {
-      if( models[a] == m )
-	{
-	  loc.push_back( a );
-	}
-    }
-  return loc;
-}
-
-elemptr global_store::findmodel( const std::shared_ptr<symmodel>& m )
-{
-  vector<size_t> found = modellocs( m );
-  if( found.size() > 1 )
-    {
-      fprintf(stderr, "REV error in find model in GLOBAL STORE, found more than one examples of model [%s]\n", m->buildpath().c_str() );
-      exit(1);
-    }
-  
-  //std::shared_ptr<symmodel> foundguy;
-  elemptr res; //( foundguy, vector<size_t>(0) );
-  //res.model = foundguy;
-  //just get this model, right now ;) It will be a var in a model I assume.
-  if( found.size() == 1)
-    {
-      //foundguy = models[ found[0] ];
-      res.model = models[ found[0] ];
-    }
-  
-  return res;
-}
-
-elemptr global_store::findmodel( const string& s ) //, const vector<size_t>& idx )
-{
-  vector<size_t> found = modellocs( s );
-  if( found.size() > 1 )
-    {
-      fprintf(stderr, "REV error in find model in GLOBAL STORE, found more than one examples of model [%s]\n", s.c_str() );
-      exit(1);
-    }
-
-  vector<size_t> idx;
-  std::shared_ptr<symmodel> foundguy;
-  elemptr res( foundguy, idx );
-  //just get this model, right now ;) It will be a var in a model I assume.
-  if( found.size() == 1)
-    {
-      //foundguy = models[ found[0] ];
-      res.model = models[ found[0] ];
-    }
-  
-  return res;
-} //end findmodel
-
-
-
-
-
-
-vector<real_t> vect_mult( const vector< vector<real_t> >& v )
-{
-  if( v.size() == 0 )
-    {
-      fprintf(stderr, "vect mult size 0\n");
-      exit(1);
-    }
-  
-  vector<real_t> r = v[0];
-  if( r.size() == 0 )
-    {
-      fprintf(stderr, "multiplying zero size vector...\n");
-      exit(1);
-    }
-  
-  else if( v.size() == 1 )
-    {
-      real_t res=1;
-      for(size_t x=0; x<v[0].size(); ++x)
-	{
-	  res *= r[x];
-	}
-      r.resize(1);
-      r[0] = res;
-      //r.push_back( res ); //size 1 lol
-    }
-  else
-    {
-      for(size_t a=1; a<v.size(); ++a)
-	{
-	  if( v[a].size() != r.size() )
-	    {
-	      fprintf(stderr, "REV error vect mult, v1 != v2\n");
-	      exit(1);
-	    }
-
-	  for(size_t x=0; x<r.size(); ++x)
-	    {
-	      r[x]*=v[a][x];
-	    }
-	}
-    }
-  
-  return r;
-}
-
-
-vector<real_t> vect_sum( const vector< vector<real_t> >& v )
-{
-  if( v.size() == 0 )
-    {
-      fprintf(stderr, "vect sum size 0\n");
-      exit(1);
-    }
-  
-  vector<real_t> r = v[0];
-  if( r.size() == 0 )
-    {
-      fprintf(stderr, "sum zero size vector...\n");
-      exit(1);
-    }
-  else if( v.size() == 1 )
-    {
-      real_t res=0;
-      for(size_t x=0; x<v[0].size(); ++x)
-	{
-	  res += r[x];
-	}
-      r.resize(1);
-      r[0] = res;
-      //r.push_back( res ); //size 1 lol
-    }
-  else
-    {
-      for(size_t a=1; a<v.size(); ++a)
-	{
-	  if( v[a].size() != r.size() )
-	    {
-	      fprintf(stderr, "REV error vect mult, v1 != v2\n");
-	      exit(1);
-	    }
-
-	  for(size_t x=0; x<r.size(); ++x)
-	    {
-	      r[x] += v[a][x];
-	    }
-	}
-    }
-  
-  return r;
-} //end vect sum.
-
-
-vector<real_t> vect_div(  const vector< vector<real_t> >& v )
-{
-  if( v.size() == 0 )
-    {
-      fprintf(stderr, "vect div size 0\n");
-      exit(1);
-    }
-
-  vector<real_t> r = v[0];
-  for(size_t x=1; x<v.size(); ++x)
-    {
-      if( v[x].size() != r.size() )
-	{
-	  fprintf(stderr, "REV WTF vect div v1 != v2\n");
-	  exit(1);
-	}
-      for(size_t y=0; y<v[x].size(); ++y)
-	{
-	  r[x] /= v[x][y];
-	}
-    }
-
-  return r;
-  
-}
-
-vector<real_t> vect_diff(  const vector< vector<real_t> >& v )
-{
-   if( v.size() == 0 )
-    {
-      fprintf(stderr, "vect diff size 0\n");
-      exit(1);
-    }
-
-  vector<real_t> r = v[0];
-  for(size_t x=1; x<v.size(); ++x)
-    {
-      if( v[x].size() != r.size() )
-	{
-	  fprintf(stderr, "REV WTF vect diff v1 != v2\n");
-	  exit(1);
-	}
-      for(size_t y=0; y<v[x].size(); ++y)
-	{
-	  r[x] -= v[x][y];
-	}
-    }
-
-  return r;
-  
-}
-
-vector<real_t> vect_negate( const vector<real_t>& val )
-{
-  vector<real_t> r = val;
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      r[x] = -r[x];
-    }
-  return r;
-}
-
-vector<real_t> vect_exp( const vector<real_t>& val )
-{
-  vector<real_t> r = val;
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      r[x] = exp(r[x]);
-    }
-  return r;
-}
-vector<real_t> vect_sqrt( const vector<real_t>& val )
-{
-  vector<real_t> r = val;
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      r[x] = sqrt(r[x]);
-    }
-  return r;
-}
-vector<real_t> vect_sqr( const vector<real_t>& val )
-{
-  vector<real_t> r = val;
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      r[x] = r[x]*r[x];
-    }
-  return r;
-}
-
-vector<real_t> vect_normal( const vector<real_t>& meanval, const vector<real_t>& stdval, std::default_random_engine& RANDGEN )
-{
-  vector<real_t> r = meanval;
-  if(meanval.size() != stdval.size())
-    {
-      fprintf(stderr, "vect_normal error mean != std size\n"); exit(1);
-    }
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      std::normal_distribution<real_t> mydist( meanval[x], stdval[x] );
-      r[x] = mydist( RANDGEN );
-    }
-
-  return r;
-     
-}
-
-vector<real_t> vect_uniform( const vector<real_t>& minval, const vector<real_t>& maxval, std::default_random_engine& RANDGEN )
-{
-  vector<real_t> r = minval;
-  if(minval.size() != maxval.size())
-    {
-      fprintf(stderr, "vect_unif error min != max size\n"); exit(1);
-    }
-  for(size_t x=0; x<r.size(); ++x)
-    {
-      std::uniform_real_distribution<real_t> mydist( minval[x], maxval[x] );
-      r[x] = mydist( RANDGEN );
-    }
-  
-  return r;
-     
-}
-
-
 
 
 string get_containing_model_path( const string& parsearg, string& vartail )
@@ -2417,95 +1710,6 @@ string get_containing_model_path( const string& parsearg, string& vartail )
 }
 
 
-void symvar::addvalus( const varptr& vp )
-{
-  if( vp.idx.size() > 0 )
-    {
-      ivalu.insert( ivalu.end(), vp.idx.begin(), vp.idx.end() );
-    }
-
-  else
-    {
-      valu.insert( valu.end(), vp.valu.begin(), vp.valu.end() );
-    }
-  
-  markinit();
-}
-
-
-void corresp::fill( const vector<size_t>& arg )
-{
-  if( generating() || !initialized() )
-    {
-      ++pushed;
-      ++written;
-    }
-  else
-    {
-  
-      //Need to check from CMDS that we are still in testmode....shit.
-      //So, initially have all corresps in "genmode" for one turn...? No, they may be done more than once. So automatically set them all elsewise. OK...
-      
-      if(arg.size() == 0)
-	{
-	  fprintf(stderr, "REV: corresp::fill, trying to fill with 0 length, does this ever make sense?\n");
-	  exit(1);
-	}
-
-      correspondence.insert( correspondence.end(), arg.begin(), arg.end() );
-      numidx = vector<size_t>( correspondence.size(), 1 );
-      
-      startidx.resize( correspondence.size() );
-      std::iota(std::begin(startidx), std::end(startidx), 0);
-    }
-    //This will mark init, and also fill the other side ;)
-    parent->notify_filled_corresp( targmodel );
-    return;
-  }
-
-
-void global_store::addiparam( const string& lname, const vector<size_t>& val )
-  {
-    //auto m = symmodel::Create( "", "", lname );
-    addempty( lname );
-    models[ models.size() - 1 ]->addivars( "", "", val );
-  }
-
-void global_store::addfparam( const string& lname, const vector<real_t>& val )
-  {
-    addempty( lname );
-    models[ models.size() - 1 ]->addfvars( "", "", val );
-  }
-  
-void symvar::addivalu( const size_t& i)
-{
-  ivalu.push_back( i );
-  markinit();
-  parent->notify_size_change( ivalu.size() );
-}
-  
-void symvar::addfvalu( const real_t& f)
-{
-  valu.push_back( f );
-  markinit();
-  parent->notify_size_change( valu.size() );
-    
-}
-
-
-void symvar::addivalus( const vector<size_t>& i)
-{
-  ivalu.insert( ivalu.end(), i.begin(), i.end() );
-  parent->notify_size_change( ivalu.size() );
-}
-  
-void symvar::addfvalus( const vector<real_t>& f)
-{
-  valu.insert( valu.end(), f.begin(), f.end() );
-  parent->notify_size_change( valu.size() );
-    
-}
-
 void symmodel::setgenformodel( const string& modelname, const generator& g )
 {
   //copy generator?
@@ -2515,60 +1719,140 @@ void symmodel::setgenformodel( const string& modelname, const generator& g )
   mod->gen->enumerate();
 }
 
-void generateall( global_store& globals )
-{
-  //check that I am top model...
-  //If parent exists, It is not.
-  if( parent )
+
+
+
+
+bool symmodel::checkcorrready()
+  {
+    bool corrready=true;
+    for(size_t v=0; v<correspondences.size(); ++v)
+      {
+	if( !correspondences[v]->isinit() )
+	  {
+	    fprintf(stderr, "WARNING: checkcorrready(): model [%s] to model [%s] correspondence is not ready (var [%s])\n", buildpath().c_str(), correspondences[v]->targmodel->buildpath().c_str(), vars[v]->name.c_str() );
+	    corrready=false;
+	  }
+      }
+    //for all vars, for all corresp, are init?
+    for( size_t m=0; m<models.size(); ++m)
+      {
+	if( !models[m]->checkcorrready() )
+	  {
+	    corrready=false;
+	  }
+      }
+    return corrready;
+  }
+
+bool symmodel::checkvarsready()
+  {
+    bool varsready=true;
+    for(size_t v=0; v<vars.size(); ++v)
+      {
+	if( !vars[v]->isinit() )
+	  {
+	    fprintf(stderr, "WARNING: checkvarsready(): model [%s] var [%s] not ready\n", buildpath().c_str(), vars[v]->name.c_str() );
+	    varsready=false;
+	  }
+      }
+    //for all vars, for all corresp, are init?
+    for( size_t m=0; m<models.size(); ++m)
+      {
+	if( !models[m]->checkvarsready() )
+	  {
+	    varsready=false;
+	  }
+      }
+    return varsready;
+  }
+
+
+void symmodel::addfvars( const string& s, const string& t, const vector<real_t>& f )
+  {
+    addvar( s, t );
+    vars[ vars.size() - 1 ]->addfvalus( f );
+  }
+
+void symmodel::addivars( const string& s, const string& t, const vector<size_t>& i )
+  {
+    addvar( s, t );
+    vars[ vars.size() - 1 ]->addivalus( i );
+  }
+
+
+void symmodel::fillemptymodels( )
+  {
+    size_t ms=get_modelsize();
+    if( ms == 0 )
+      {
+	fprintf(stderr, "REV: error in symmodel;;fillemptymodels; model size is 0!\n");
+	exit(1);
+      }
+
+    vector<real_t> tmp( ms, 0 );
+    
+    //iterate through all models' variables, fill with modelsize zero.
+    for(size_t x=0; x<vars.size(); ++x)
+      {
+	if( !vars[x]->isinit() )
+	  {
+	    vars[x]->addfvalus( tmp );
+	  }
+      }
+
+    for(size_t m=0; m<models.size(); ++m )
+      {
+	models[m]->fillemptymodels();
+      }
+  }
+	
+
+
+vector<size_t> symmodel::get_varloc( const string& s )
     {
-      fprintf(stdout, "ERR, generateall, can only be called for ROOT of model (i.e. circuit level)\n");
-      exit(1);
+      vector<size_t> loc;
+      for(size_t x=0; x<vars.size(); ++x)
+	{
+	  if( s.compare( vars[x]->name ) == 0 )
+	    {
+	      loc.push_back(x);
+	    }
+	}
+
+      return loc;
+      //fprintf(stderr, "REV: ERROR variable [%s] could not be found in this model [%s]\n", s.c_str(), name.c_str() );
+      //exit(1);
     }
 
-  //Determine correspondences by building markup of which models/variables are
-  //generated by each.
-
-  //Note that um, different sub-models may be inter-dependent, so it is not only
-  //top levels that we have to update (crap)
-  //Just get direct model pointers I guess.
-  //Oh shit, I was building direct model pointers. I need to somehow separate out
-  //individual generate "commands" that are interdependent between models, to
-  //figure out which to call in which order.
-  //I.e. generator, model, and line, are the order.
-  //When I specify a generator for a submodel, do I add to head model or sub model?
-  //Head is easiest, but then I need to determine "what" it is actually generating
-  //in terms of variables ;)
-  //Some things, like correspondences, need to be also accounted for...
-  //OK...so treat correspondences like variables :)
-  //In some cases it might be based on uninitialized guys?
-  
-}
-
-//This should never really be called...
-void generateme( global_store& globals )
-{
-  gen->generate( shared_from_this(), globals );
-}
 
 
-void symvar::markinit()
-{
-  init = true;
-  
-  //REsize to this size.
-  size_t mysize = valu.size();
-  if( ivalu.size() > mysize )
+std::shared_ptr<symvar> symmodel::getvar_widx( const string& s, const vector<size_t>& idx, const vector<elemptr>& trace )
     {
-	mysize = ivalu.size();
+      //std::vector<string> parsed = parse( s );
+      string varname;
+      elemptr containingmodel = get_containing_model_widx( s, idx, trace, varname );
+      fprintf(stdout, "getvar widx: found containing model for var [%s] (model is [%s])\n", s.c_str(), containingmodel.model->buildpath().c_str());
+      vector<size_t> loc = containingmodel.model->get_varloc( varname );
+      //fprintf(stdout, "REV: doen getting varloc of requested var, size  is [%lu]\n", loc.size() );
+      if(loc.size() == 0 )
+	{
+	  if( parent )
+	    {
+	      return parent->getvar_widx( s, idx, trace );
+	    }
+	  else
+	    {
+	      fprintf(stderr, "GETVAR, could not get variable through model hierarchy. Note I am now at root level so I do not know model name...[%s]\n", s.c_str());
+	      exit(1);
+	    }
+	}
+      if(loc.size() > 1 )
+	{
+	  fprintf(stderr, "REV weird more than one var of same name [%s]\n", s.c_str());
+	  exit(1);
+	}
+
+      //actualcontaining = shared_from_this();
+      return containingmodel.model->vars[ loc[0] ];
     }
-  parent->notify_size_change( mysize );
-}
-
-
-void corresp::markinit()
-{
-  //Set model size of parent to my correspondence.size() or whichever is greater?
-  //Only notify parent....other guy might be of diff size...
-  parent->notify_size_change( startidx.size() );
-    init=true;
-}

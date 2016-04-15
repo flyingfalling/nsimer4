@@ -22,19 +22,7 @@ struct cmdstore
   vector<string> localfnames;
   vector<string> localfs;
 
-  //REV: static, so all copies of CMD will return the same value I assume...i.e. basically global variable...
-  static bool testmode=true;
-
-  bool checktest()
-  {
-    return testmode;
-  }
-
-  void settestdone()
-  {
-    testmode = false;
-  }
-		   
+  		   
   
   vector<size_t> findlocal( const string& fname ) const
   {
