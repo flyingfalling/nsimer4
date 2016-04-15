@@ -91,11 +91,13 @@ struct updatefunct_t
 updatefunct_t( const std::shared_ptr<symmodel>& m )
 : model( m )
   {
+    cmds = std::make_shared<cmdstore>( );
   }
-
+  
   //dummy (nothing)
   updatefunct_t()
   {
+    cmds = std::make_shared<cmdstore>( );
   }
   
   void add( const string& s )
