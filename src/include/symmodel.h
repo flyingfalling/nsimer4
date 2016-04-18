@@ -52,7 +52,6 @@ struct corresp;
 
 
 
-
 struct hole
 {
   string name;
@@ -72,10 +71,6 @@ hole( const string& n, const std::shared_ptr<symmodel>& p )
   void add( const std::shared_ptr<symmodel>& h );
 
 }; //end struct hole
-
-
-
-
 
 
 
