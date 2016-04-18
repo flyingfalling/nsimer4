@@ -710,11 +710,11 @@ struct symmodel
   void check_and_enumerate( size_t depth , bool checkupdate );
 
 
-  void make_dependencies_and_generate( global_state& globals );
+  void make_dependencies_and_generate( global_store& globals );
 
   void set_non_generating();
   
-  
+  void sanity_check();
 }; //end STRUCT SYMMODEL
 
 

@@ -9,7 +9,7 @@ void genfunct_t::execute( std::shared_ptr<symmodel>& model, global_store& global
 }
 
 
-void genfunct_t::execute_line( std::shared_ptr<symmodel>& model, global_store& globals, const size_t& line )
+void genfunct_t::execute_line( std::shared_ptr<symmodel> model, global_store& globals, const size_t& line )
 {
   if( line >= lines.size() )
     {
@@ -29,8 +29,15 @@ void genfunct_t::execute_line( std::shared_ptr<symmodel>& model, global_store& g
       fprintf(stderr, "REV in execute, CMDS not defined yet!\n" );
       exit(1);
     }
+
+  //fprintf(stdout, "Sanity check before\n");
+  //model->sanity_check();
   
   DOCMD( lines[line], trace, *cmds, globals );
+
+  //fprintf(stdout, "Sanity check after\n");
+  //model->sanity_check();
+
 }
 
 void generator::generate( std::shared_ptr<symmodel>& model, global_store& globals )

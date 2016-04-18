@@ -295,6 +295,7 @@ void symvar::markinit()
   //REV: don't mark init if we are generating (we're just looking for var dependencies)
   if( generating() == false )
     {
+      fprintf(stdout, "Marking init!\n");
       init = true;
   
       //REsize to this size.

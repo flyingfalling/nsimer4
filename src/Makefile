@@ -12,7 +12,7 @@ srcs = $(wildcard $(CPPDIR)/*.cpp)
 objs = $(srcs:.cpp=.o)
 deps = $(srcs:.cpp=.d)
 
-default: testgen #testsymmodel #testfparser
+default: testsimple #testgen #testsymmodel #testfparser
 
 testfparser:
 	$(CC) $(CPPFLAG) $(INCLFLAG) $(LIBFLAG) unit_tests/testfparser.cpp -o testfparser.exe $(LIBS)
@@ -22,6 +22,9 @@ testsymmodel:  $(objs) $(headers) Makefile
 
 testgen:  $(objs) $(headers) Makefile
 	$(CC) $(CPPFLAG) $(INCLFLAG) $(LIBFLAG) $(objs) unit_tests/testgen.cpp -o testgen.exe $(LIBS)
+
+testsimple:  $(objs) $(headers) Makefile
+	$(CC) $(CPPFLAG) $(INCLFLAG) $(LIBFLAG) $(objs) unit_tests/testsimple.cpp -o testsimple.exe $(LIBS)
 
 
 %.o: %.cpp

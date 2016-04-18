@@ -1,6 +1,7 @@
 #pragma once
 
 #include <symmodel.h>
+#include <global_store.h>
 
 
 
@@ -138,7 +139,7 @@ struct depstate
 
   //Accesses ROOT through m
   //Access GLOBALS too?
-  depstate( const std::shared_ptr<symmodel>& m, const size_t& line, global_state& globals );
+  depstate( const std::shared_ptr<symmodel>& m, const size_t& line, global_store& globals );
 
   void execute( global_store& globals );
 }; //end  STRUCT depstate
@@ -150,6 +151,9 @@ struct generator_deps
   vector< vector<size_t> > pernode;
   vector<size_t> pre;
   vector<size_t> post;
+
+  void fill_depstate(  const std::shared_ptr<symmodel>& m, global_store& globals );
+  void fill_all_depstates( const std::shared_ptr<symmodel>& m, global_store& globals );
   
   void build_graph( )
   {
@@ -190,7 +194,7 @@ struct generator_deps
   
   void visit( const size_t& startnode, vector<bool>& tmpvisited, vector<bool>& visited, vector<size_t>& evalorder )
   {
-    if( startnode >= tmpvisited.size || startnode >= visited.size() )
+    if( startnode >= tmpvisited.size() || startnode >= visited.size() )
       {
 	fprintf(stderr, "REV: something is wrong, visited or tmpvisited is wrong size (%lu) and (%lu), should be nodes size (%lu)\n", tmpvisited.size(), visited.size(), nodes.size());
 	exit(1);
@@ -198,7 +202,7 @@ struct generator_deps
     if( tmpvisited[ startnode ] )
       {
 	//REV: this may exit in middle of recursion
-	fprintf(stderr, "REV: ERROR, graph is not directed/acyclic (DAG). Failed on node [%lu]\n", );
+	fprintf(stderr, "REV: ERROR, graph is not directed/acyclic (DAG). Failed on node [%lu]\n", startnode);
 	exit(1);
       }
     else

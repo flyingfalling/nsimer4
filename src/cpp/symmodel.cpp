@@ -104,20 +104,26 @@ void symmodel::fillemptymodels( )
 
 
 vector<size_t> symmodel::get_varloc( const string& s )
+{
+  vector<size_t> loc;
+  fprintf(stdout, "REV: in var loc...for var [%s]\n", s.c_str());
+  for(size_t x=0; x<vars.size(); ++x)
     {
-      vector<size_t> loc;
-      for(size_t x=0; x<vars.size(); ++x)
+      if(!vars[x])
 	{
-	  if( s.compare( vars[x]->name ) == 0 )
-	    {
-	      loc.push_back(x);
-	    }
+	  fprintf(stderr, "Wtf, var idx [%lu] in model [%s] is a NULL ptr\n", x, buildpath().c_str() );
+	  exit(1);
 	}
-
-      return loc;
-      //fprintf(stderr, "REV: ERROR variable [%s] could not be found in this model [%s]\n", s.c_str(), name.c_str() );
-      //exit(1);
+      fprintf(stdout, "REV: in var loc... [%s] vs varname [%s]\n", s.c_str(), vars[x]->name.c_str());
+      if( s.compare( vars[x]->name ) == 0 )
+	{
+	  loc.push_back(x);
+	}
     }
+  return loc;
+  //fprintf(stderr, "REV: ERROR variable [%s] could not be found in this model [%s]\n", s.c_str(), name.c_str() );
+  //exit(1);
+}
 
 
 
@@ -615,7 +621,7 @@ void symmodel::read_and_reset_all( vector<string>& readstate, vector<string>& wr
 	  {
 	    pushedstate.push_back( correspondences[x]->buildpath() );
 	  }
-	correspondences[x].reset();
+	correspondences[x]->reset();
       }
 
     for(size_t x=0; x<vars.size(); ++x)
@@ -632,7 +638,7 @@ void symmodel::read_and_reset_all( vector<string>& readstate, vector<string>& wr
 	  {
 	    pushedstate.push_back( vars[x]->buildpath() );
 	  }
-	vars[x].reset();
+	vars[x]->reset(); //REV: lolol shared ptr has RESET()
       }
     
     for(size_t x=0; x<models.size(); ++x)
@@ -651,20 +657,48 @@ void symmodel::execute_gen_line( const size_t& line, global_store& globals )
     }
   else
     {
-      gen->execute_line( this, globals, line );
+      gen->execute_line( shared_from_this(), globals, line );
     }
 }
 
 
-void symmodel::make_dependencies_and_generate( global_state& globals )
+void symmodel::sanity_check()
+{
+  for(size_t x=0; x<vars.size(); ++x)
+    {
+      if( !vars[x] )
+	{
+	  fprintf(stderr, "REV: Model [%s]'s [%lu]-th VAR is NULL\n", buildpath().c_str(), x ); 
+	}
+    }
+  for(size_t x=0; x<models.size(); ++x)
+    {
+      if( !models[x] )
+	{
+	  fprintf(stderr, "REV: SANITY CHECK WARNING, MODEL [%s]'s [%lu]-th model is NULL\n", buildpath().c_str(), x);
+	}
+      else
+	{
+	  models[x]->sanity_check();
+	}
+    }
+}
+
+void symmodel::make_dependencies_and_generate( global_store& globals )
 {
   generator_deps gd;
-  gd.fill_all_depstates( std::shared_from_this(), globals );
-  vector<depstate> execorder = parse_dependencies();
+  fprintf(stdout, "\n\n======= WILL MAKE DEPS AND GENERATE==========\n\n");
+  
+  gd.fill_all_depstates( shared_from_this(), globals );
+  vector<depstate> execorder = gd.parse_dependencies();
   
   set_non_generating(); //Now I can actually execute everything if I want.
+  
+  fprintf(stdout, "SANITY CHECK. Deps done, exiting\n");
+  exit(0);
+  
   globals.set_non_generating();
-
+  
   for( size_t l=0; l<execorder.size(); ++l )
     {
       execorder[l].execute( globals );

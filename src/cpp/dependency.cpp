@@ -1,7 +1,7 @@
 #include <dependency.h>
 
 
-depstate::depstate( const std::shared_ptr<symmodel>& m, const size_t& line, global_state& globals )
+depstate::depstate( const std::shared_ptr<symmodel>& m, const size_t& line, global_store& globals )
   : model( m ), linenumber( line )
 {
   std::shared_ptr<symmodel> root = model->get_root();
@@ -10,8 +10,17 @@ depstate::depstate( const std::shared_ptr<symmodel>& m, const size_t& line, glob
   //vector<string> readstate, writtenstate, pushedstate;
 
   size_t beforesize = globals.models.size();
+
+  fprintf(stdout, "EXECUTING generator line from inside DEPSTATE constructor\n");
   
+  //Sanity check here.
+  fprintf(stdout, "Sanity check BEFORE executing DEPSTATE execute_gen_line\n");
+  model->sanity_check();
+
   model->execute_gen_line( linenumber, globals );
+
+  //fprintf(stdout, "Sanity check AFTER executing DEPSTATE execute_gen_line\n");
+  //model->sanity_check();
 
   size_t aftersize = globals.models.size();
 
@@ -19,9 +28,17 @@ depstate::depstate( const std::shared_ptr<symmodel>& m, const size_t& line, glob
     {
       creator = true;
     }
+
+  fprintf(stdout, "Sanity check BEFORE cleanup!\n");
+  model->sanity_check();
+  fprintf(stdout, "**END** Sanity check BEFORE cleanup!\n");
   
   root->read_and_reset_all( read, written, pushed );
   globals.read_and_reset_all( read, written, pushed );
+
+  fprintf(stdout, "Sanity check AFTER cleanup!\n");
+  model->sanity_check();
+  fprintf(stdout, "**END** Sanity check AFTER cleanup!\n");
   
 }
 
@@ -31,7 +48,7 @@ void depstate::execute( global_store& globals )
 }
 
 
-void generator_deps::fill_depstate(  const std::shared_ptr<symmodel>& m, global_state& globals )
+void generator_deps::fill_depstate(  const std::shared_ptr<symmodel>& m, global_store& globals )
 {
   if( !m )
     {
@@ -48,7 +65,7 @@ void generator_deps::fill_depstate(  const std::shared_ptr<symmodel>& m, global_
     }
 }
 
-void generator_deps::fill_all_depstates( const std::shared_ptr<symmodel>& m, global_state& globals )
+void generator_deps::fill_all_depstates( const std::shared_ptr<symmodel>& m, global_store& globals )
 {
   if( !m )
     {
@@ -94,7 +111,7 @@ vector<depstate> generator_deps::parse_dependencies()
 
   vector<depstate> ret;
   fprintf(stdout, "\n == EVALUATION ORDER\n");
-  for(size_t x=0; x<evalorder.size() ++x )
+  for(size_t x=0; x<evalorder.size(); ++x )
     {
       size_t toeval = evalorder[x];
 	
@@ -104,7 +121,7 @@ vector<depstate> generator_deps::parse_dependencies()
 	  fprintf(stderr, "REV: error in parse_dep, model pointer is NULL\n");
 	  exit(1);
 	}
-      fprintf( "Model [%s] line [%lu], [%s]\n", nodes[toeval].model->buildpath().c_str(), nodes[toeval].linenumber, nodes[toeval].model->gen->genfunct.lines[ nodes[toeval].linenumber ] );
+      fprintf(stdout,  "Model [%s] line [%lu], [%s]\n", nodes[toeval].model->buildpath().c_str(), nodes[toeval].linenumber, nodes[toeval].model->gen->genfunct.lines[ nodes[toeval].linenumber ].c_str() );
     }
 
   return ret;

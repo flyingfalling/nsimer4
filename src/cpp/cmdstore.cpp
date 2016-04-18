@@ -676,7 +676,12 @@ FUNCDECL( PUSH )
   //REV: this must be a variable? However, it might be a model in GLOBALS. Findmodel will handle finding model QUA varname in globals.
   //That is a hack. I should make globals straight vars, and thus make corresp be held inside vars....?
   //Or, force it find "naked" variables in globals. I guess that makes sense...
-  auto pushep = findmodel( pushto, trace, globals); 
+  string varn;
+  fprintf( stdout, "In pust, trying to get [%s]\n", pushto.c_str() );
+  string s= get_containing_model_path( pushto, varn);
+  fprintf( stdout, "Parsed to containing [%s] and tail [%s]\n", s.c_str(), varn.c_str() );
+  auto pushep = findmodel( s, trace, globals);
+  //auto pushep = get_containing_model_widx( pushto, trace, globals); 
   
   if( !pushep.model )
     {
@@ -755,8 +760,16 @@ FUNCDECL( PUSHFORALL )
       //Get model refererenced from here... must be initialized/size. OK. Can it be a var?
       //Note the model must be found inside trace? Yea...
       auto ep = findmodel( targmodel, trace, globals);
-      auto pushep = findmodel( pushto, trace, globals);
-  
+      
+      fprintf(stdout, "Finished finding model EP (targ model). Will look for pushep\n");
+      string varn;
+      fprintf( stdout, "In pust, trying to get [%s]\n", pushto.c_str() );
+      string s= get_containing_model_path( pushto, varn);
+      auto pushep = findmodel( s, trace, globals);
+
+      fprintf(stdout, "Finished finding PUSH EP (push model).\n");
+
+      
       if( !ep.model )
 	{
 	  fprintf(stderr, "Couldnt find EP model in PUSHFORALL\n");
@@ -768,6 +781,7 @@ FUNCDECL( PUSHFORALL )
 	  exit(1);
 	}
 
+      fprintf(stdout, "Will check modelsize etc.\n");
       //REV: this automatically will execute for every one, getting it back, and
       //appending...
       size_t modelsize = ep.model->get_modelsize();
@@ -777,13 +791,13 @@ FUNCDECL( PUSHFORALL )
 	  fprintf(stderr, "ERROR, model size is zero!\n");
 	  exit(1);
 	}
-  
+      
       //vector<size_t> idxs( modelsize );
       //std::iota(std::begin(idxs), std::end(idxs), 0);
       //std::generate( idxs.begin(), idxs.end(), UniqueNumber );
   
       //ep.idx = idxs;
-  
+      
       //IDX overwrites it, I use IDX directly ;)
       vector<elemptr> newtrace = trace;
       ep.idx = vector<size_t>(1,0);
@@ -801,11 +815,12 @@ FUNCDECL( PUSHFORALL )
       //varptr vp = DOCMD( toexec, trace, cmds, globals );
   
       varptr fullvp;
-
+      
       vector<size_t> corr;
-  
+      
       for(size_t x=0; x<modelsize; ++x)
 	{
+	  fprintf(stdout, "PUSHFORALL, [%lu] of [%lu]!\n", x, modelsize );
 	  newtrace[ newtrace.size() - 1].idx[ 0 ] = x;
 	  varptr vp = DOCMD( toexec, newtrace, cmds, globals );
 	  fullvp.valu.insert( fullvp.valu.end(), vp.valu.begin(), vp.valu.end() );
@@ -1372,21 +1387,39 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
   //I will *directly* get the pre model. In pre model, I will directly access the variable ->POSTMODEL
 
   string containingpath = get_containing_model_path( varname, vartail );
-  
+
+  fprintf(stdout, "PUSH PROPER VAR Widx, got model name [%s] and varname [%s]\n", containingpath.c_str(), vartail.c_str() );
   elemptr ep;
   if( !iscorr )
     {
+      fprintf(stdout, "NOT A CORR! Will find model\n");
       ep = findmodel( containingpath, trace, globals );
+      if( !ep.model )
+	{
+	  fprintf(stderr, "Could not find EP model: [%s]\n", containingpath.c_str() );
+	  exit(1);
+	}
+
     }
   else
     {
       //Problem is, if it is "", we are fucked? It *always* must be called from inside a model. If the model is syn2-1 fine. That will be on trace?
+      fprintf(stdout, "IS A CORR (trying to push? Whoa)\n");
       ep = findmodel( premod, trace, globals );
+      if( !ep.model )
+	{
+	  fprintf(stderr, "Could not find EP model for corr: [%s]\n", premod.c_str() );
+	  exit(1);
+	}
+
     }
 
+  fprintf(stdout, "Got EP, now will check idx/size\n");
   bool isidx = check_idx( vartail );
   bool issize = check_issize( vartail );
+  fprintf(stdout, "FINISHED check idx/size\n");
 
+    
   if( isidx )
     {
       //Literally get my "idxs" in that model (whoa...?)
@@ -1409,6 +1442,7 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
     }
   else if( iscorr ) //REV: note I don't have a way to set TEMPORARY correspondences rofl.
     {
+      fprintf(stdout, "REV: I am in ISCORR condition...\n");
       //get final model haha
       elemptr m2 = findmodel( postmod, trace, globals );
       //auto curr = get_current_model(trace);
@@ -1445,8 +1479,10 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
     }
   else  //it's just a normal var
     {
+      fprintf(stdout, "Accessing variable location...(tail name is [%s])\n", vartail.c_str());
       vector<size_t> loc = ep.model->get_varloc( vartail );
       //fprintf(stdout, "REV: doen getting varloc of requested var, size  is [%lu]\n", loc.size() );
+      fprintf(stdout, "Got location of var [%s], found [%lu] positions for it\n", vartail.c_str(), loc.size() );
       if(loc.size() == 0 )
 	{
 	  if( ep.model->parent )
@@ -1475,6 +1511,7 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	{
 	  //REV: SANITY CHECK, this will return SAME if it is SAME,
 	  //Will return CONST if it is const ;)
+	  fprintf(stdout, "Accessing var at idx [%lu] in model [%s]\n", loc[0], ep.model->buildpath().c_str() );
 	  auto realvar = ep.model->vars[ loc[0] ];
 	  
 	  //REV: wat the fck, for pushing, I don't need corresp. I will make it...?
@@ -1496,6 +1533,7 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 		  exit(1);
 		}
 
+	      fprintf( stdout, "WARNING? couldn't find a corresp, so pushing one...\n");
 	      ep.model->addcorresp( get_curr_model( trace ).model );
 	      corr = getcorresp_forvar( ep.model, trace, realvar );
 	      if( !corr )
@@ -1510,13 +1548,14 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	      fprintf(stderr, "REV: we have a problem houston...\n");
 	      exit(1);
 	    }
-
+	  
 	  if( corr->isinit() )
 	    {
 	      fprintf(stderr, "Trying to push back but already init fuck\n");
 	      exit(1);
 	    }
 
+	  fprintf(stdout, "Will add valus...\n");
 	  realvar->addvalus( vp );
 	  
 	  //Need to set corresp to that which was passed to me.
@@ -1526,16 +1565,18 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	      corr->fill( topushascorr );
 	    }
 	  
-	  return;
-	}
+	} //end ELSE we found the var in this model.
       
-    }
+    } //end ELSE if it's just a normal var
+  
 } //end PUSH var proper
 		   
 
 
 
-std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& curr, const std::shared_ptr<symmodel>& targ, const std::shared_ptr<symvar>& var )
+std::shared_ptr<corresp> getcorresp_forvar( const std::shared_ptr<symmodel>& curr,
+					    const std::shared_ptr<symmodel>& targ,
+					    const std::shared_ptr<symvar>& var )
 {
   if( !var->parent)
     {
