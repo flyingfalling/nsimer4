@@ -107,3 +107,22 @@ void global_store::addfparam( const string& lname, const vector<real_t>& val )
     models[ models.size() - 1 ]->addfvars( "", "", val );
   }
   
+
+
+void global_store::read_and_reset_all( vector<string>& readstate, vector<string>& writtenstate, vector<string>& pushedstate )
+{
+  for(size_t x=0; x<models.size(); ++x)
+    {
+      models[x]->read_and_reset_all( readstate, writtenstate, pushedstate );
+    }
+  
+}
+
+
+void global_store::set_non_generating( )
+{
+  for(size_t x=0; x<models.size(); ++x)
+    {
+      models[x]->set_non_generating();
+    }
+}

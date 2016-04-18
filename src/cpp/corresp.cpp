@@ -61,3 +61,23 @@ vector<vector<size_t>> corresp::make_mirror( const size_t& src_modelsize )
     return mirrored;
       
   }
+
+
+
+string corresp::buildpath()
+  {
+    if( !parent )
+      {
+	fprintf(stderr, "REV: error, correspondence has no parent\n");
+	exit(1);
+      }
+    if( !targmodel )
+      {
+	fprintf(stderr, "REV: error, correspondence has no targmodel\n");
+	exit(1);
+      }
+    string premodel = parent->get_toplevel_model()->buildpath();
+    string postmodel = targmodel->get_toplevel_model()->buildpath();
+    string result = premodel + "->" + postmodel;
+    return result;
+  }

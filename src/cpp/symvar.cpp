@@ -306,3 +306,16 @@ void symvar::markinit()
       parent->notify_size_change( mysize );
     }
 }
+
+
+string symvar::buildpath()
+{
+  //Use local name?
+  if( !parent )
+    {
+      fprintf(stderr, "REV: error var [%s] has no parent\n", name.c_str() );
+    }
+
+  string parentname = parent->buildpath();
+  return ( parentname + "/" + name );
+}

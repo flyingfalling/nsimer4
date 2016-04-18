@@ -37,12 +37,7 @@ private:
     return genmode;
   }
 
-  void donegenerating()
-  {
-    genmode = false;
-  }
-  
-  
+    
 
   bool isint()
   {
@@ -70,6 +65,13 @@ private:
     
 public:
 
+
+  void donegenerating()
+  {
+    genmode = false;
+  }
+  
+
   bool isconst()
   {
     //only if size is 1????
@@ -79,6 +81,8 @@ public:
       }
     return false;
   }
+
+  string buildpath();
 
   
   bool isinit()
@@ -102,6 +106,23 @@ public:
     read=0;
     written=0;
     pushed=0;
+  }
+  bool wasread()
+  {
+    if(read>0) { return true; }
+    return false;
+  }
+
+  bool waswritten()
+  {
+    if(written>0) { return true; }
+    return false;
+  }
+
+  bool waspushed()
+  {
+    if(pushed>0) { return true; }
+    return false;
   }
   
   //Default is "my location"

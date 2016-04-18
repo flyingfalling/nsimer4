@@ -131,6 +131,16 @@ struct depstate
       }
     return true;
   }
+  
+  depstate()
+  {
+  }
+
+  //Accesses ROOT through m
+  //Access GLOBALS too?
+  depstate( const std::shared_ptr<symmodel>& m, const size_t& line, global_state& globals );
+
+  void execute( global_store& globals );
 }; //end  STRUCT depstate
 
 

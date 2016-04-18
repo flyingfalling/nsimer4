@@ -25,6 +25,8 @@ struct genfunct_t
   void addlocal(const string& fname, const string& f );
  
   void execute( std::shared_ptr<symmodel>& model, global_store& globals );
+
+  void execute_line( std::shared_ptr<symmodel>& model, global_store& globals, const size_t& line );
   
   void add( const string& s )
   {
@@ -62,6 +64,11 @@ struct generator
   void add( const string& s )
   {
     genfunct.add( s );
+  }
+
+  void execute_line(  std::shared_ptr<symmodel>& model, global_store& globals, const size_t& line )
+  {
+    genfunct.execute_line( model, globals, line );
   }
   
 };

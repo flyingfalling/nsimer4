@@ -23,7 +23,7 @@
 #include <symvar.h>
 #include <global_store.h>
 #include <nsimer4utils.h>
-
+#include <dependency.h>
 
 
 #include <sys/types.h>
@@ -148,6 +148,8 @@ struct symmodel
   void addiparam( const string& lname, const vector<size_t>& val )
   { globalparams.addiparam( lname, val ); }
   */
+
+  void execute_gen_line( const size_t& line, global_store& globals );
   
   void setgenformodel( const string& modelname, const generator& g );
   
@@ -627,7 +629,9 @@ struct symmodel
       }
     return true;
   }
-
+  
+  void read_and_reset_all( vector<string>& readstate, vector<string>& writtenstate, vector<string>& pushedstate );
+    
   std::shared_ptr<symmodel> get_root()
     {
       std::shared_ptr<symmodel> top = get_toplevel_model();
@@ -704,6 +708,12 @@ struct symmodel
   //Enumerates all (at a global scope) variables, and recursively does it for all my sub-models
   //All holes which are filled by models, have their global scope printed too.
   void check_and_enumerate( size_t depth , bool checkupdate );
+
+
+  void make_dependencies_and_generate( global_state& globals );
+
+  void set_non_generating();
+  
   
 }; //end STRUCT SYMMODEL
 

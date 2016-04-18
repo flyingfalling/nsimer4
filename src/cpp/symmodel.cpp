@@ -597,3 +597,95 @@ void symmodel::addcorresp( const std::shared_ptr<symmodel>& targ )
       }
   } //end addcoresp
   
+
+
+void symmodel::read_and_reset_all( vector<string>& readstate, vector<string>& writtenstate, vector<string>& pushedstate )
+  {
+    for(size_t x=0; x<correspondences.size(); ++x)
+      {
+	if( correspondences[x]->wasread() )
+	  {
+	    readstate.push_back( correspondences[x]->buildpath() );
+	  }
+	if( correspondences[x]->waswritten() )
+	  {
+	    writtenstate.push_back( correspondences[x]->buildpath() );
+	  }
+	if( correspondences[x]->waspushed() )
+	  {
+	    pushedstate.push_back( correspondences[x]->buildpath() );
+	  }
+	correspondences[x].reset();
+      }
+
+    for(size_t x=0; x<vars.size(); ++x)
+      {
+	if( vars[x]->wasread() )
+	  {
+	    readstate.push_back( vars[x]->buildpath() );
+	  }
+	if( vars[x]->waswritten() )
+	  {
+	    writtenstate.push_back( vars[x]->buildpath() );
+	  }
+	if( vars[x]->waspushed() )
+	  {
+	    pushedstate.push_back( vars[x]->buildpath() );
+	  }
+	vars[x].reset();
+      }
+    
+    for(size_t x=0; x<models.size(); ++x)
+      {
+	models[x]->read_and_reset_all( readstate, writtenstate, pushedstate );
+      }
+
+  }
+
+void symmodel::execute_gen_line( const size_t& line, global_store& globals )
+{
+  if( !gen )
+    {
+      fprintf(stderr, "REV: error, trying to execute gen line [%lu] in model [%s], but it does not have a generator!\n", line, buildpath().c_str());
+      exit(1);
+    }
+  else
+    {
+      gen->execute_line( this, globals, line );
+    }
+}
+
+
+void symmodel::make_dependencies_and_generate( global_state& globals )
+{
+  generator_deps gd;
+  gd.fill_all_depstates( std::shared_from_this(), globals );
+  vector<depstate> execorder = parse_dependencies();
+  
+  set_non_generating(); //Now I can actually execute everything if I want.
+  globals.set_non_generating();
+
+  for( size_t l=0; l<execorder.size(); ++l )
+    {
+      execorder[l].execute( globals );
+    }
+}
+
+
+void symmodel::set_non_generating( )
+{
+  for(size_t x=0; x<vars.size(); ++x)
+    {
+      vars[x]->donegenerating();
+    }
+
+  for(size_t x=0; x<correspondences.size(); ++x)
+    {
+      correspondences[x]->donegenerating();
+    }
+  
+  for(size_t x=0; x<models.size(); ++x)
+    {
+      models[x]->set_non_generating();
+    }
+}

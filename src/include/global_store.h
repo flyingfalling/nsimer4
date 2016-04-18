@@ -35,4 +35,6 @@ struct global_store
   elemptr findmodel( const string& s ); //, const vector<size_t>& idx );
   elemptr findmodel( const std::shared_ptr<symmodel>& m );
 
+  void read_and_reset_all( vector<string>& readstate, vector<string>& writtenstate, vector<string& pushedstate );
+  void set_non_generating();
 }; //end GLOBAL STORE

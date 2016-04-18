@@ -37,6 +37,26 @@ public:
     pushed=0;
   }
   
+  string buildpath();
+
+  bool wasread()
+  {
+    if(read>0) { return true; }
+    return false;
+  }
+
+  bool waswritten()
+  {
+    if(written>0) { return true; }
+    return false;
+  }
+
+  bool waspushed()
+  {
+    if(pushed>0) { return true; }
+    return false;
+  }
+  
   vector<size_t> getcorresprange( const size_t& start, const size_t& end )
   {
     if( correspondence.size() <= end )
