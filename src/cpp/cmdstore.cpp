@@ -723,6 +723,11 @@ FUNCDECL( PUSH )
   return vp;
 } //end PUSH
 
+
+//REV: this is nasty, it requires the MODEL to have been initialized! I.e. "pushed". "get-model-size" is a "read" from the model!
+//So, I need "reads" from model size as requirements. OK... I.e. modelsize is a "variable"
+//All pushes write to model size.
+//And when I check, it checks I guess.
 FUNCDECL( PUSHFORALL )
 {
   vector<string> parsed = cmds.doparse( arg );
@@ -737,6 +742,8 @@ FUNCDECL( PUSHFORALL )
   
   if( parsed.size() == 2 )
     {
+      fprintf(stderr, "REV: ERROR: 2-arg PUSHFORALL has a dependency-parsing problem (can't determine which var pushes I rely on), so it is disabled. Specify a var.\n");
+      exit(1);
       targmodel = "";
       pushto = parsed[0];
       toexec = parsed[1];
@@ -751,7 +758,7 @@ FUNCDECL( PUSHFORALL )
   //Ghetto hack, check isnumeric lol
   size_t reptimes;
   bool isint = checknumericint( targmodel, reptimes );
-
+  
   if( !isint )
     {
       fprintf(stdout, "Will FORALL execute [%s] for every member of [%s] (seen from model [%s]), PUSHING TO [%s]\n", toexec.c_str(), targmodel.c_str(), get_curr_model(trace).model->buildpath().c_str(), pushto.c_str());
@@ -759,7 +766,10 @@ FUNCDECL( PUSHFORALL )
 
       //Get model refererenced from here... must be initialized/size. OK. Can it be a var?
       //Note the model must be found inside trace? Yea...
-      auto ep = findmodel( targmodel, trace, globals);
+      //auto ep = findmodel( targmodel, trace, globals);
+      string var1;
+      string tm = get_containing_model_path( targmodel, var1);
+      auto ep = findmodel( tm, trace, globals);
       
       fprintf(stdout, "Finished finding model EP (targ model). Will look for pushep\n");
       string varn;
@@ -780,17 +790,31 @@ FUNCDECL( PUSHFORALL )
 	  fprintf(stderr, "Couldnt find push EP model in PUSHFORALL\n");
 	  exit(1);
 	}
-
+      
       fprintf(stdout, "Will check modelsize etc.\n");
+      ep.idx = vector<size_t>(1,0);
+      vector<elemptr> newtrace = trace;
+      newtrace.push_back( ep );
+      auto var = ep.model->getvar_widx( var1, ep.idx, newtrace );
+      if( !var)
+	{
+	  fprintf(stderr, "REV: error couldn't find var\n");
+	  exit(1);
+	}
+
+      
       //REV: this automatically will execute for every one, getting it back, and
       //appending...
-      size_t modelsize = ep.model->get_modelsize();
-      if(modelsize == 0 )
+      
+      //No, do it via the variable, that way it will mark the variable as "read".
+      //size_t modelsize = ep.model->get_modelsize();
+      size_t modelsize = var->get_modelsize();
+      /*if( modelsize == 0 )
 	{
 	  //Fuck...
 	  fprintf(stderr, "ERROR, model size is zero!\n");
 	  exit(1);
-	}
+	  }*/
       
       //vector<size_t> idxs( modelsize );
       //std::iota(std::begin(idxs), std::end(idxs), 0);
@@ -799,9 +823,7 @@ FUNCDECL( PUSHFORALL )
       //ep.idx = idxs;
       
       //IDX overwrites it, I use IDX directly ;)
-      vector<elemptr> newtrace = trace;
-      ep.idx = vector<size_t>(1,0);
-      newtrace.push_back( ep );
+      
       //elemptr.idx = vector<size_t>(1, x); //1 through N? Does it make more sense to
       //do one at a time and append them, or to do them all together here?
       //What if each model is doing some sneaky shit like um, nested forall? That's fine.
@@ -935,21 +957,37 @@ FUNCDECL( FORALL )
 
   //Get model refererenced from here... must be initialized/size. OK. Can it be a var?
   //Note the model must be found inside trace? Yea...
-  auto ep = findmodel( targmodel, trace, globals);
-
+  //auto ep = findmodel( targmodel, trace, globals);
+  string var1;
+  string tm = get_containing_model_path( targmodel, var1);
+  auto ep = findmodel( tm, trace, globals);
+      
   if( !ep.model )
     {
       fprintf(stderr, "Couldnt find model in FORALL\n");
       exit(1);
     }
-  size_t modelsize = ep.model->get_modelsize();
-  if(modelsize == 0 )
+
+  ep.idx = vector<size_t>(1,0);
+  vector<elemptr> newtrace = trace;
+  newtrace.push_back( ep );
+  auto var = ep.model->getvar_widx( var1, ep.idx, newtrace );
+  if( !var)
+    {
+      fprintf(stderr, "REV: error couldn't find var\n");
+      exit(1);
+    }
+  size_t modelsize = var->get_modelsize();
+      
+  //size_t modelsize = ep.model->get_modelsize();
+
+  /*if(modelsize == 0 )
     {
       //Fuck...
       fprintf(stderr, "ERROR, model size is zero!\n");
       exit(1);
     }
-
+  */
   //It's doing this for each postsyn, e.g. blah...OK. It will return the list directly.
   //REV: be careful with how I handle
   //Note, X is the idx?!!!!. I will compress them here!!!
@@ -958,12 +996,12 @@ FUNCDECL( FORALL )
   vector<size_t> idxs( modelsize );
   std::iota(std::begin(idxs), std::end(idxs), 0);
   //std::generate( idxs.begin(), idxs.end(), UniqueNumber );
-
-  ep.idx = idxs;
+  
+  //ep.idx = idxs;
   
   //IDX overwrites it, I use IDX directly ;)
-  vector<elemptr> newtrace = trace;
-  newtrace.push_back( ep );
+  //vector<elemptr> newtrace = trace;
+  //newtrace.push_back( ep );
   //elemptr.idx = vector<size_t>(1, x); //1 through N? Does it make more sense to
   //do one at a time and append them, or to do them all together here?
   //What if each model is doing some sneaky shit like um, nested forall? That's fine.
@@ -1723,6 +1761,16 @@ elemptr get_model_widx( const string& parsearg, const vector<elemptr>& trace )
 {
   
   elemptr lastguy = get_curr_model(trace); //trace[trace.size()-1];
+  if(trace.size() == 0 )
+    {
+      fprintf(stderr, "REV: error in get model widx, trace is size 0!\n");
+      exit(1);
+    }
+  if( !lastguy.model )
+    {
+      fprintf(stderr, "REV: error in get model widx, lastguy is NULL!\n");
+      exit(1);
+    }
   vector<elemptr> newtrace = trace;
   newtrace.pop_back();
   return lastguy.model->get_model_widx( parsearg, lastguy.idx, newtrace );

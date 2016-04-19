@@ -45,7 +45,7 @@ vector<real_t> symvar::getvalus( const vector<size_t>& _idx )
 varptr symvar::vgetvalus( const vector<size_t>& idx )
 {
   varptr tmp;
-  
+
   //Ugh, no type checking fuck this.
   if( !isinit() || generating() )
     {
@@ -73,7 +73,7 @@ void symvar::vsetvalus( const vector<size_t>& idx, const varptr& v )
 {
   if( !isinit() || generating() )
     {
-      ++written;
+      markinit();
       return;
     }
 
@@ -259,12 +259,14 @@ void symvar::addfvalu( const real_t& f)
 void symvar::addivalus( const vector<size_t>& i)
 {
   ivalu.insert( ivalu.end(), i.begin(), i.end() );
+  markinit();
   parent->notify_size_change( ivalu.size() );
 }
   
 void symvar::addfvalus( const vector<real_t>& f)
 {
   valu.insert( valu.end(), f.begin(), f.end() );
+  markinit();
   parent->notify_size_change( valu.size() );
     
 }
@@ -306,6 +308,12 @@ void symvar::markinit()
 	}
       parent->notify_size_change( mysize );
     }
+  else
+    {
+      //fprintf(stdout, "REV: YOLOYOLO I AM MARKING INIT!!!\n");
+      ++pushed;
+      //++written?
+    }
 }
 
 
@@ -319,4 +327,23 @@ string symvar::buildpath()
 
   string parentname = parent->buildpath();
   return ( parentname + "/" + name );
+}
+
+
+size_t symvar::get_modelsize()
+{
+  if( !parent )
+    {
+      fprintf(stderr, "REV: error get_modelsize in var, no parent!\n");
+      exit(1);
+    }
+  if( !isinit() || generating() )
+    {
+      ++read;
+      return 0; //model size is still 0...
+    }
+  else
+    {
+      return parent->get_modelsize();
+    }
 }

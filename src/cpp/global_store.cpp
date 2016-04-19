@@ -118,6 +118,15 @@ void global_store::read_and_reset_all( vector<string>& readstate, vector<string>
   
 }
 
+void global_store::reset_all( )
+{
+  for(size_t x=0; x<models.size(); ++x)
+    {
+      models[x]->reset_all( );
+    }
+  
+}
+
 
 void global_store::set_non_generating( )
 {

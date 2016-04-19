@@ -10,6 +10,26 @@
 //TODO: add way to automatically determine dependencies among variables for update purposes (based on read/write during each update line of each model).
 //TODO: make options so that I can do "even" updates i.e. spike schedulers.
 
+
+//REV: Any time any are read, we have a requirement on all that PUSH it (*in that model*). How do I know the top-level model though?
+
+//Check a "read" of top-level model, versus size? Note, for stuff like "for all", what it does is reads SIZE directly... i.e. an iter.
+//A ghetto iter. Just do like FOR(1,size). Either way, I need to read size.
+
+//Any time I read or write, I have a dependency on someone pushing to that (top-level) model.
+//How about, I recursively modify size every time? And make sure I write to "that" model?
+
+//Any time I write/read, I mark the top level.
+//Thing is, dependency is not on ALL pushes/writes, but rather on ANY pushes/writes. How can you specify that? How about, making it dependent on the "First guy".
+//I.e. mark it as the "first push" only when it does X? No...what if I push multi to that. But I might e.g. read from "SIZE". that is the FORALL type thing...
+//Meh... OK, fine, disallow direct reads from that. Force a single SIZE var? So, size must be written first. But, many may write size. Is that the case?
+
+//REV: ROFL it doesn't even work, because I never try to "read" position/x!! I just get holding model, and get SIZE ;0
+//So, I need to figure out how to mark that I "read" it... i.e. the variable.
+
+//And then, for all 
+
+
 #pragma once
 
 #include <commontypes.h>
@@ -136,6 +156,14 @@ struct symmodel
 
   std::shared_ptr<generator> gen;
 
+ private:
+  size_t readmodel;
+  size_t wrotemodel;
+  size_t pushedmodel;
+
+  
+ public:
+  
   /*
   global_store globalparams; //should never be accessed for model, should only be convenience at highest level circuit. Shoudl really make derivative with thisl...
 
@@ -629,7 +657,8 @@ struct symmodel
       }
     return true;
   }
-  
+
+  void reset_all( );
   void read_and_reset_all( vector<string>& readstate, vector<string>& writtenstate, vector<string>& pushedstate );
     
   std::shared_ptr<symmodel> get_root()
@@ -648,6 +677,7 @@ struct symmodel
   
   size_t get_modelsize()
   {
+    readmodel=true;
     auto toplevel = get_toplevel_model();
     return toplevel->modelsize;
   }

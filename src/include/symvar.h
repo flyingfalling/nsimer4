@@ -71,7 +71,8 @@ public:
     genmode = false;
   }
   
-
+  size_t get_modelsize();
+  
   bool isconst()
   {
     //only if size is 1????

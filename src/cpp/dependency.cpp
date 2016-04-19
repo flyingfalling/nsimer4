@@ -12,10 +12,11 @@ depstate::depstate( const std::shared_ptr<symmodel>& m, const size_t& line, glob
   size_t beforesize = globals.models.size();
 
   fprintf(stdout, "EXECUTING generator line from inside DEPSTATE constructor\n");
-  
+  root->reset_all();
+  globals.reset_all();
   //Sanity check here.
-  fprintf(stdout, "Sanity check BEFORE executing DEPSTATE execute_gen_line\n");
-  model->sanity_check();
+  //fprintf(stdout, "Sanity check BEFORE executing DEPSTATE execute_gen_line\n");
+  //model->sanity_check();
 
   model->execute_gen_line( linenumber, globals );
 
@@ -29,17 +30,19 @@ depstate::depstate( const std::shared_ptr<symmodel>& m, const size_t& line, glob
       creator = true;
     }
 
-  fprintf(stdout, "Sanity check BEFORE cleanup!\n");
-  model->sanity_check();
-  fprintf(stdout, "**END** Sanity check BEFORE cleanup!\n");
-  
+  //fprintf(stdout, "Sanity check BEFORE cleanup!\n");
+  //model->sanity_check();
+  //fprintf(stdout, "**END** Sanity check BEFORE cleanup!\n");
+
+  //REV: just do it to basicall reset all ;)
+    
   root->read_and_reset_all( read, written, pushed );
   globals.read_and_reset_all( read, written, pushed );
-
-  fprintf(stdout, "Sanity check AFTER cleanup!\n");
-  model->sanity_check();
-  fprintf(stdout, "**END** Sanity check AFTER cleanup!\n");
   
+  //fprintf(stdout, "Sanity check AFTER cleanup!\n");
+  //model->sanity_check();
+  //fprintf(stdout, "**END** Sanity check AFTER cleanup!\n");
+
 }
 
 void depstate::execute( global_store& globals )
@@ -125,4 +128,32 @@ vector<depstate> generator_deps::parse_dependencies()
     }
 
   return ret;
+}
+
+
+void depstate::enumerate()
+{
+  //model and line number
+  fprintf(stdout,  "Model [%s] line [%lu], [%s]\n", model->buildpath().c_str(), linenumber, model->gen->genfunct.lines[ linenumber ].c_str() );
+
+  fprintf(stdout, "  READ: ");
+  for(size_t x=0; x<read.size(); ++x)
+    {
+      fprintf(stdout, "[%s]", read[x].c_str() );
+    }
+  fprintf(stdout, "\n");
+
+  fprintf(stdout, "  WRITTEN: ");
+  for(size_t x=0; x<written.size(); ++x)
+    {
+      fprintf(stdout, "[%s]", written[x].c_str() );
+    }
+  fprintf(stdout, "\n");
+
+  fprintf(stdout, "  PUSHED: ");
+  for(size_t x=0; x<pushed.size(); ++x)
+    {
+      fprintf(stdout, "[%s]", pushed[x].c_str() );
+    }
+  fprintf(stdout, "\n");
 }

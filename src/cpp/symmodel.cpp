@@ -422,7 +422,7 @@ elemptr symmodel::get_model_widx( const vector<string>& parsed, const vector<siz
     //This is the next model I will go into
     string submodel = parsed[0];
     vector<string> remainder( parsed.begin()+1, parsed.end() ); //same as remainder, remainder.erase(0);
-
+    
     //REV: This is where I should iterate up the tree! This is the issue.
     vector<size_t> mlocs = find_model( submodel );
     vector<size_t> hlocs = find_hole( submodel );
@@ -604,6 +604,24 @@ void symmodel::addcorresp( const std::shared_ptr<symmodel>& targ )
   } //end addcoresp
   
 
+void symmodel::reset_all( )
+{
+  for(size_t x=0; x<correspondences.size(); ++x)
+    {
+      correspondences[x]->reset();
+    }
+  
+  for(size_t x=0; x<vars.size(); ++x)
+    {
+      vars[x]->reset(); //REV: lolol shared ptr has RESET()
+    }
+  
+  for(size_t x=0; x<models.size(); ++x)
+    {
+      models[x]->reset_all();
+    }
+
+}
 
 void symmodel::read_and_reset_all( vector<string>& readstate, vector<string>& writtenstate, vector<string>& pushedstate )
   {
@@ -690,6 +708,7 @@ void symmodel::make_dependencies_and_generate( global_store& globals )
   fprintf(stdout, "\n\n======= WILL MAKE DEPS AND GENERATE==========\n\n");
   
   gd.fill_all_depstates( shared_from_this(), globals );
+  gd.build_graph();
   vector<depstate> execorder = gd.parse_dependencies();
   
   set_non_generating(); //Now I can actually execute everything if I want.

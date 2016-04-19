@@ -25,6 +25,9 @@ struct depstate
   //REV: I say model, but I mean gen I guess/
   std::shared_ptr<symmodel> model;
   size_t linenumber;
+
+  void enumerate();
+  
   
   bool depends_on( const depstate& d )
   {
@@ -107,7 +110,8 @@ struct depstate
       {
 	string tmp=written[r];
 	//See if R occurs in WRITE or PUSH
-	if( d.pushedme( tmp ) )
+	//Also, only if I did not also push it.
+	if( d.pushedme( tmp ) && !pushedme( tmp ) )
 	  {
 	    return true;
 	  }
@@ -174,8 +178,25 @@ struct generator_deps
 	      }
 	  }
       }
+
+    enumerate();
   }
 
+  void enumerate()
+  {
+    fprintf(stdout, "ENUMERATING DEPENDENCY GRAPH:\n\n");
+    for(size_t x=0; x<nodes.size(); ++x)
+      {
+	fprintf(stdout, "\nNODE [%lu]: Depends on: ", x);
+	for(size_t y=0; y<pernode[x].size(); ++y)
+	  {
+	    fprintf(stdout, "[%lu]", pernode[x][y]);
+	  }
+	fprintf(stdout, "\n");
+	nodes[x].enumerate();
+      }
+  }
+  
   vector<size_t> findunmarked( const vector<bool>& marked )
   {
     vector<size_t> notdone;
@@ -202,7 +223,8 @@ struct generator_deps
     if( tmpvisited[ startnode ] )
       {
 	//REV: this may exit in middle of recursion
-	fprintf(stderr, "REV: ERROR, graph is not directed/acyclic (DAG). Failed on node [%lu]\n", startnode);
+	fprintf(stderr, "REV: ERROR, graph is not directed/acyclic (DAG). Failed on node [%lu].\n", startnode);
+	nodes[startnode].enumerate();
 	exit(1);
       }
     else
