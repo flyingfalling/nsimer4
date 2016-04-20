@@ -172,9 +172,10 @@ struct generator_deps
 	      {
 		//This means, X needs Y to be evaluated first. So, those with no outgoings, are the winners.
 		//Better to make a "per" guy?
-		pernode[x].push_back( y );
-		pre.push_back( x );
-		post.push_back( y );
+		//pernode[x].push_back( y );
+		pernode[y].push_back(x); //REV: reverse this? I.e. this means that for Y, X must be evaluated first. This *works* now?
+		pre.push_back( y );
+		post.push_back( x );
 	      }
 	  }
       }

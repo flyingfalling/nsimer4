@@ -50,6 +50,7 @@ FUNCDECL(DOCMD)
       else
 	{
 	  retval.valu = vector<real_t>(1, res);
+	  retval.idx = vector<size_t>(1, (size_t)res);
 	}
     }
   //fprintf(stdout, "Returning from DOCMD\n");
@@ -417,7 +418,11 @@ FUNCDECL( SUMFORALLCONNS )
   
   //elemptr currmodel = get_curr_model(trace);
   std::shared_ptr<corresp> corr = getcorresp( currmodel.model,  holemodel.model ); //REV: this may have returned the identity pointer if they are the same model?
-
+  if(!corr)
+    {
+      fprintf(stderr, "REV in sumforallconns, no corresp exists!\n");
+      exit(1);
+    }
   
   varptr vp;
   vp.valu = vector<real_t>(1, 0);
@@ -546,6 +551,11 @@ FUNCDECL( MULTFORALLCONNS )
   //elemptr currmodel = get_curr_model(trace);
   std::shared_ptr<corresp> corr = getcorresp( currmodel.model,  holemodel.model ); //REV: this may have returned the identity pointer if they are the same model?
 
+  if( !corr )
+    {
+      fprintf(stderr, "REV: no corr exists in multforallconns\n");
+      exit(1);
+    }
 
   varptr vp;
   vp.valu = vector<real_t>(1, 1.0);
@@ -1480,12 +1490,19 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
     }
   else if( iscorr ) //REV: note I don't have a way to set TEMPORARY correspondences rofl.
     {
-      fprintf(stdout, "REV: I am in ISCORR condition...\n");
+      fprintf(stdout, "REV: I am in ISCORR condition...looking for model [%s]\n", postmod.c_str());
+
+      //REV: should I add to trace? it looks like I may have got the next guy, but I have no trace on it?
       //get final model haha
+
+      fprintf(stdout, "Trace is of size [%lu]...\n", trace.size() );
       elemptr m2 = findmodel( postmod, trace, globals );
+      
+      fprintf(stdout, "Finished finding model postmodel [%s]!\n", postmod.c_str() );
       //auto curr = get_current_model(trace);
       //std::shared_ptr<corresp> mycorr;
       auto mycorr = ep.model->getcorresp( m2.model );
+      fprintf(stdout, "Finished finding corresp to postmodel [%s]!\n", postmod.c_str() );
       //bool foundcorr = ep.model->getcorresp( m2, mycorr );
       if( !mycorr )
 	{
@@ -1498,6 +1515,7 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	  //Do I automatically append?
 	  //How to set it? Lol, I'm literally setting only "major" size. Thus, start/etc. are all the same (identity)
 	  
+	  fprintf(stdout, "Getting EP idx...\n");
 	  vector<size_t> myidx = ep.idx;
 	  /*if(myidx.size() != 1 )
 	    {
@@ -1505,10 +1523,14 @@ void push_proper_var_widx(const string& varname, const vector<elemptr>& trace, g
 	      exit(1);
 	      }*/
 
+	  fprintf(stdout, "Getting VP idx...\n");
 	  vector<size_t> newvals = vp.idx;
 	  //mycorr->set( myidx, newvals );
 	  //mycorr.insert( mycorr.end(), vp.idx.begin(), vp.idx.end() );
+	  fprintf(stdout, "REV: will now FILL\n");
+	  
 	  mycorr->fill( newvals );
+	  fprintf(stdout, "REV: **FINISHED** FILL\n");
 	  //REV: literally pushed it directly, didn't need the corresp ;)
 	  
 	  return;

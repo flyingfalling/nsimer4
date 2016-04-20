@@ -278,6 +278,28 @@ void updatefunct_t::execute( const size_t& myidx, global_store& globals )
       }
   }
 
+bool symmodel::corresp_exists( const std::shared_ptr<symmodel>& targ )
+{
+  std::shared_ptr<symmodel> thistop = get_toplevel_model();
+  std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
+  
+  if( thistop == targtop )
+    {
+      return true;
+    }
+  else
+    {
+      for(size_t x=0; x<thistop->correspondences.size(); ++x)
+	{
+	  if( thistop->correspondences[x]->targmodel == targtop )
+	    {
+	      return true;
+	    }
+	}
+    }
+  return false;
+}
+
 std::shared_ptr<corresp> symmodel::getcorresp( const std::shared_ptr<symmodel>& targ )
     {
 
@@ -287,26 +309,24 @@ std::shared_ptr<corresp> symmodel::getcorresp( const std::shared_ptr<symmodel>& 
       std::shared_ptr<symmodel> thistop = get_toplevel_model();
       std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
 
-      fprintf(stdout, "Will return...\n");
-      if( thistop == targtop )
+      //Just make it identity by default? NO FUCK...when I try to "add" it will check first...
+      //if( thistop == targtop )
+      //{
+      //  fprintf(stdout, "Found the corresp (identity)!\n");
+      c = std::make_shared<identity_corresp>( targtop, thistop );
+      //return true; //it will try to add it? Fuck...
+      //	}
+      for(size_t x=0; x<thistop->correspondences.size(); ++x)
 	{
-	  c = std::make_shared<identity_corresp>( targtop, thistop );
-	  //return true; //it will try to add it? Fuck...
-	}
-
-      else
-	{
-
-	  //Does it exist already? Wat?
-	  for(size_t x=0; x<thistop->correspondences.size(); ++x)
+	  if( thistop->correspondences[x]->targmodel == targtop )
 	    {
-	      if( thistop->correspondences[x]->targmodel == targtop )
-		{
-		  c = thistop->correspondences[x];
-		}
+	      fprintf(stdout, "Found a real corresp!\n");
+	      c = thistop->correspondences[x];
 	    }
 	}
-      
+
+
+
       return c;
       
     } //end getcorresp
@@ -388,12 +408,28 @@ void symmodel::check_and_enumerate( size_t depth , bool checkupdate )
 
 void symmodel::fill_corresp( const std::shared_ptr<corresp>& hiscorr )
   {
+
+    if( !hiscorr )
+      {
+	fprintf(stderr, "REV: error in fill corresp, hiscorr is null\n");
+	exit(1);
+      }
+    fprintf(stdout, "Will attempt to make a mirror...\n");
     vector< vector<size_t> > mycorresps = hiscorr->make_mirror( get_modelsize() );
-        
+    
     //this is MY parst.
+    fprintf(stdout, "In FILL CORRESP...will getcorresp\n");
     auto corr = getcorresp( hiscorr->parent );
 
-    corr->clearcorresp();
+    fprintf(stdout, "In FILL CORRESP...got corresp to other guy...\n");
+    
+    if( !corr )
+      {
+	fprintf(stderr, "In fill corresp, corresp doesn't exist!\n");
+	exit(1);
+      }
+    
+    //corr->clearcorresp();
     for(size_t x=0; x<get_modelsize(); ++x)
       {
 	corr->push( mycorresps[x].size(), mycorresps[x] );
@@ -469,7 +505,8 @@ elemptr symmodel::get_model_widx( const vector<string>& parsed, const vector<siz
 	    fprintf(stderr, "ERROR in get_model_widx, getting [%s] from HOLE, but hole [%s] has size [%lu], but it should be 1\n", submodel.c_str(), holes[hloc].name.c_str(), holes[hloc].members.size() );
 	    exit(1);
 	  }
-	
+
+	//REV: so in the case it does not exist yet, we have a problem?
 	std::shared_ptr<symmodel> nextmodel = holes[hloc].members[0];
 	
 	if( check_same_toplevel_model( nextmodel ) )
@@ -485,7 +522,8 @@ elemptr symmodel::get_model_widx( const vector<string>& parsed, const vector<siz
 	else //not same toplevel model
 	  {
 	    //I NEED TO GO THROUGH A CORRESPONDENCE
-	    
+
+	    fprintf(stdout, "REV: about to go through a corresp to get a non-same model thing through a hole...\n");
 	    //std::shared_ptr<corresp> mycorresp;
 	    auto mycorresp  = getcorresp( nextmodel );
 	    if( !mycorresp )
@@ -502,9 +540,12 @@ elemptr symmodel::get_model_widx( const vector<string>& parsed, const vector<siz
 	    //REV; Don't check this here, check this in the corresp struct? I.e. return dummy data if it is not existing yet (or exit?)
 	    if(mycorresp->isinit())
 	      {
+		fprintf(stdout, "Corresp is INIT!!!! Will attempt a GETALL...\n");
 		//REV: TODO HERE, just return it directly, with new IDX_IN_SUBMODEL ;0
 		//REV: this is it!!! This is where I 
 		vector<size_t> sanity = mycorresp->getall( idx );
+		
+		fprintf(stdout, "Attempted to GETALL from the corresp!\n");
 		/*if( sanity.size() != 1 )
 		  {
 		  fprintf(stderr, "SANITY check for corresp during access failed! Expected corresp for idx [%lu] of model [%s] to have only 1 corresponding element in model [%s], but it had [%lu]\n", idx, buildpath().c_str(), nextmodel->buildpath().c_str(), sanity.size() );
@@ -515,11 +556,14 @@ elemptr symmodel::get_model_widx( const vector<string>& parsed, const vector<siz
 
 		idx_in_submodel = sanity;
 	      }
-
+	    
 	    vector<elemptr> newtrace = trace;
 	    newtrace.push_back( elemptr( shared_from_this(), idx ) );
 
-	    return nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
+	    fprintf(stdout, "About to get next model with idx...\n");
+	    auto toret = nextmodel->get_model_widx( remainder, idx_in_submodel, newtrace );
+	    fprintf(stdout, "FINISHED About to get next model with idx...\n");
+	    return toret;
 	  }
       } //end if not found in HOLES (or submodels)
     else
@@ -583,17 +627,30 @@ elemptr symmodel::get_model_widx( const vector<string>& parsed, const vector<siz
 void symmodel::notify_filled_corresp( const std::shared_ptr<symmodel>& targ )
   {
     //Call this to "mirror" from large-small on othe side.
+    fprintf(stdout, "In notify filled....will get\n");
     auto tmp = getcorresp( targ );
-    tmp->markinit(); //I better be init haha;
+    //bool correspexists = 
+
+    fprintf(stdout, "Got it...\n");
+    if( !tmp )
+      {
+	fprintf(stderr, "notify filled corresp, coudln't find it \n");
+	exit(1);
+      }
+
+    fprintf(stdout, "Will call fill corresp...\n");
     targ->fill_corresp( tmp );
+    tmp->markinit(); //I better be init haha;
+    fprintf(stdout, "Notifying that correspondence [%s] was filled!\n", tmp->buildpath().c_str() );
     return;
   }
 
 void symmodel::addcorresp( const std::shared_ptr<symmodel>& targ )
   {
-    auto tmp = getcorresp( targ );
+    //auto tmp = getcorresp( targ );
+    bool exists = corresp_exists( targ );
     
-    if( !tmp )
+    if( !exists )
       {
 	std::shared_ptr<symmodel> thistop = get_toplevel_model();
 	std::shared_ptr<symmodel> targtop = targ->get_toplevel_model();
@@ -710,18 +767,17 @@ void symmodel::make_dependencies_and_generate( global_store& globals )
   gd.fill_all_depstates( shared_from_this(), globals );
   gd.build_graph();
   vector<depstate> execorder = gd.parse_dependencies();
-  
+
+  fprintf(stdout, "SANITY CHECK. Deps done, will now generate the REAL ones!\n\n\n");
   set_non_generating(); //Now I can actually execute everything if I want.
-  
-  fprintf(stdout, "SANITY CHECK. Deps done, exiting\n");
-  exit(0);
-  
   globals.set_non_generating();
   
   for( size_t l=0; l<execorder.size(); ++l )
     {
       execorder[l].execute( globals );
     }
+
+  fprintf(stdout, "Finished *actually* generating! Check real sizes/etc.\n");
 }
 
 

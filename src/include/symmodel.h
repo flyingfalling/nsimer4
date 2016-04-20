@@ -176,7 +176,8 @@ struct symmodel
   void addiparam( const string& lname, const vector<size_t>& val )
   { globalparams.addiparam( lname, val ); }
   */
-
+  bool corresp_exists( const std::shared_ptr<symmodel>& targ );
+  
   void execute_gen_line( const size_t& line, global_store& globals );
   
   void setgenformodel( const string& modelname, const generator& g );
@@ -186,6 +187,7 @@ struct symmodel
     //some variable was pushed to...so size must have changed. Must update my size...
     auto top = get_toplevel_model();
     size_t currsize = top->modelsize;
+    fprintf(stdout, "Getting size of toplevel [%s], which is of size [%lu]. Will try to set to [%lu]\n", top->buildpath().c_str(), currsize, i );
     if( currsize < i )
       {
 	top->modelsize = i;

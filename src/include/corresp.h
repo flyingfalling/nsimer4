@@ -56,18 +56,27 @@ public:
     if(pushed>0) { return true; }
     return false;
   }
-  
+
+  //Rev: "inclusive"? NOPE!
   vector<size_t> getcorresprange( const size_t& start, const size_t& end )
   {
-    if( correspondence.size() <= end )
+    if( correspondence.size() < end )
       {
 	fprintf(stderr, "ERROR get corresprange, end > size of corresp\n");
+	if(isinit() )
+	  {
+	    fprintf(stderr, "YET, I am init?!??!!\n");
+	  }
 	exit(1);
       }
 
     if( start > end )
       {
 	fprintf(stderr, "REV: error in getcorresprange, start > end [%lu] and [%lu]\n", start, end );
+	if(isinit() )
+	  {
+	    fprintf(stderr, "YET, I am init?!??!!\n");
+	  }
 	exit(1);
       }
     vector<size_t> tmpvect( correspondence.begin()+start, correspondence.begin()+end );
@@ -76,36 +85,56 @@ public:
 
   size_t getcorresp( const size_t& s )
   {
-     if( s > numidx.size() )
+     if( s >= numidx.size() )
       {
 	fprintf(stderr, "REV: error in getstart idx, requested idx [%lu] > size of startidx [%lu]\n", s, startidx.size() );
+	if(isinit() )
+	  {
+	    fprintf(stderr, "YET, I am init?!??!!\n");
+	  }
+	exit(1);
       }
     return correspondence[s];
   }
 
   size_t getstartidx( const size_t& s)
   {
-    if( s > numidx.size() )
+    if( s >= numidx.size() )
       {
 	fprintf(stderr, "REV: error in getstart idx, requested idx [%lu] > size of startidx [%lu]\n", s, startidx.size() );
+	if(isinit() )
+	  {
+	    fprintf(stderr, "YET, I am init?!??!!\n");
+	  }
+	exit(1);
       }
     return startidx[s];
   }
 
   size_t getnumidx( const size_t& s )
   {
-    if( s > numidx.size() )
+    if( s >= numidx.size() )
       {
 	fprintf(stderr, "REV: error in getnum idx, requested idx [%lu] > size of numidx [%lu]\n", s, numidx.size() );
+	if(isinit() )
+	  {
+	    fprintf(stderr, "YET, I am init?!??!!\n");
+	  }
+	exit(1);
       }
     return numidx[s];
   }
 
   void setcorresp( const size_t& s, const size_t v)
   {
-    if( s > correspondence.size() )
+    if( s >= correspondence.size() )
       {
 	fprintf(stderr, "REV: error in setcorresp requested idx [%lu] > size of corresp [%lu]\n", s, correspondence.size() );
+	if(isinit() )
+	  {
+	    fprintf(stderr, "YET, I am init?!??!!\n");
+	  }
+	exit(1);
       }
     correspondence[s] = v;
   }
@@ -159,10 +188,12 @@ public:
     if( !isinit() || generating() )
       {
 	++read;
-
+	
 	//vector<size_t> tmp( 1, 0 );
 	//return tmp;
       }
+
+    //If it is not init yet, what do I do?
     
     vector<size_t> ret;
     for(size_t a=0; a<s.size(); ++a)
@@ -241,13 +272,12 @@ struct conn_corresp : public corresp
   std::vector<size_t> getall( const size_t& s )
   {
     //DUMMY. Just return zero...because we have no way of knowing what it will be until it's actually filled
-    if( isinit()  == false || generating() )
+    if( isinit() == false || generating() )
       {
 	return vector<size_t>( 1, 0 );
       }
     else
       {
-	
 	size_t start = getstartidx( s ); //startidx[s];
 	size_t size = getnumidx( s ); //numidx[s];
 	return getcorresprange( start, start+size ); 
